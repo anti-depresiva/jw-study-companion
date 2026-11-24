@@ -22,6 +22,7 @@ export default function SettingsPage() {
         <div className="text-sm">
           <p className="font-semibold">JW+ Study Companion</p>
           <p className="text-muted-foreground">Dein persönlicher Studienbegleiter · Your Personal Study Companion</p>
+          <p className="mt-1 font-mono text-xs text-muted-foreground">Version {(process.env.NEXT_PUBLIC_APP_VERSION || "lokal").slice(0, 7)}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Privates, inoffizielles Studienwerkzeug. Nicht mit Jehovas Zeugen, der Wachtturm-Gesellschaft oder jw.org verbunden. Inhalte stammen aus
             offiziellen Veröffentlichungen auf jw.org und werden vom Benutzer selbst importiert.

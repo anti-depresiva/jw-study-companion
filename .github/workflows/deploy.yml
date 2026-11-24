@@ -30,6 +30,7 @@ jobs:
         env:
           # Die App liegt unter https://<benutzer>.github.io/<repository>/
           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+          NEXT_PUBLIC_APP_VERSION: ${{ github.sha }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -21,7 +21,8 @@ export async function extractPdfText(file: File): Promise<{ text: string; pages:
     const { totalPages, text } = await extractText(pdf, { mergePages: false });
     const pageTexts = Array.isArray(text) ? text : [text];
     return { text: pageTexts.join("\n\n"), pages: totalPages, pageTexts };
-  } catch {
-    throw new UploadError("Der Text konnte nicht aus der PDF-Datei gelesen werden (evtl. gescannt oder geschützt).");
+  } catch (err) {
+    const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    throw new UploadError(`Der Text konnte nicht aus der PDF-Datei gelesen werden. Technischer Grund: ${detail.slice(0, 200)}`);
   }
 }
