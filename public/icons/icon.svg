@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2d5aa0"/>
+      <stop offset="1" stop-color="#132a52"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e2c27a"/>
+      <stop offset="1" stop-color="#c49a3e"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- geöffnetes Buch -->
+  <path d="M256 170c-38-28-92-38-148-30v214c56-8 110 2 148 30z" fill="#ffffff"/>
+  <path d="M256 170c38-28 92-38 148-30v214c-56-8-110 2-148 30z" fill="#ffffff"/>
+  <path d="M256 170v214" stroke="#132a52" stroke-opacity=".22" stroke-width="6" stroke-linecap="round"/>
+  <path d="M140 196c36-4 70 2 92 14M140 238c36-4 70 2 92 14M140 280c36-4 70 2 92 14" stroke="#2d5aa0" stroke-opacity=".28" stroke-width="8" stroke-linecap="round" fill="none"/>
+  <!-- goldenes Lesezeichen -->
+  <path d="M338 146v92l20-16 20 16v-96c-14-1-27-0-40 4z" fill="url(#gold)"/>
+</svg>

@@ -1,0 +1,160 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-ui);
+  --font-serif: var(--font-reading);
+  --font-heading: var(--font-ui);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-brand: var(--brand);
+  --color-brand-mid: var(--brand-mid);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-surface: var(--surface);
+  --color-success: var(--success);
+  --color-sec-schaetze: var(--sec-schaetze);
+  --color-sec-dienst: var(--sec-dienst);
+  --color-sec-leben: var(--sec-leben);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+/* Hell: Weiß / sehr helles Grau, Dunkelblau als Primärfarbe, dezentes Gold */
+:root {
+  --background: #f5f6f8;
+  --surface: #ffffff;
+  --foreground: #1a2230;
+  --card: #ffffff;
+  --card-foreground: #1a2230;
+  --popover: #ffffff;
+  --popover-foreground: #1a2230;
+  --primary: #1e3a6b;
+  --primary-foreground: #ffffff;
+  --brand: #1e3a6b;
+  --brand-mid: #3a64a8;
+  --secondary: #e9eef6;
+  --secondary-foreground: #1e3a6b;
+  --muted: #eef0f4;
+  --muted-foreground: #5b6577;
+  --accent: #e5ecf7;
+  --accent-foreground: #1e3a6b;
+  --gold: #b08a35;
+  --gold-soft: #f6efdd;
+  --success: #2f7d55;
+  --destructive: #b42318;
+  --border: #dde2ea;
+  --input: #d3d9e3;
+  --ring: #3a64a8;
+  --radius: 0.75rem;
+  --sec-schaetze: #3f6474;
+  --sec-dienst: #b07d12;
+  --sec-leben: #962d36;
+  --reading-scale: 1;
+}
+
+/* Dunkel: Dunkelgrau mit dezenten blauen Akzenten */
+.dark {
+  --background: #14171c;
+  --surface: #1b1f26;
+  --foreground: #e4e8ee;
+  --card: #1b1f26;
+  --card-foreground: #e4e8ee;
+  --popover: #1f242c;
+  --popover-foreground: #e4e8ee;
+  --primary: #8db0e8;
+  --primary-foreground: #0e1727;
+  --brand: #8db0e8;
+  --brand-mid: #6a92d6;
+  --secondary: #232a36;
+  --secondary-foreground: #cfdcf2;
+  --muted: #222731;
+  --muted-foreground: #9ba4b4;
+  --accent: #223049;
+  --accent-foreground: #cfdcf2;
+  --gold: #d6b468;
+  --gold-soft: #2e2919;
+  --success: #5bb98a;
+  --destructive: #f07167;
+  --border: #2a303a;
+  --input: #343b47;
+  --ring: #6a92d6;
+  --sec-schaetze: #7fa6b6;
+  --sec-dienst: #d9a945;
+  --sec-leben: #d9707a;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  /* Lesetext wie in einer digitalen Publikation */
+  .reading {
+    font-family: var(--font-reading), Georgia, serif;
+    font-size: calc(1.0625rem * var(--reading-scale));
+    line-height: 1.72;
+  }
+  .reading-sm {
+    font-family: var(--font-reading), Georgia, serif;
+    font-size: calc(0.98rem * var(--reading-scale));
+    line-height: 1.65;
+  }
+  .eyebrow {
+    @apply text-[0.68rem] font-semibold tracking-[0.12em] uppercase;
+  }
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fade-in {
+    animation: fade-in 220ms ease-out both;
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}

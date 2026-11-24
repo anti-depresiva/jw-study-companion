@@ -1,0 +1,358 @@
+/**
+ * Alle Aktionen der App laufen direkt im Browser des Geräts.
+ * Daten: IndexedDB (lokal). KI: direkte Anfrage an die Anthropic-API.
+ */
+import { z } from "zod";
+import { generateAnswerSet, generateComments } from "@/lib/ai/answers";
+import { askAssistant, type ChatTurn } from "@/lib/ai/assistant";
+import { aiEnabled, configureAi } from "@/lib/ai/client";
+import { extractArticleWithAi, extractWorkbookWithAi } from "@/lib/ai/extract";
+import { store } from "@/lib/data";
+import { parseWatchtowerText, parseWorkbookText, type ParsedArticle, type ParsedWorkbook } from "@/lib/import/parse";
+import { extractPdfText } from "@/lib/import/pdf";
+import { contentHash, normalizeImportText } from "@/lib/import/text";
+import { scriptureLabels } from "@/lib/scripture";
+import { checkOfficialUrl } from "@/lib/sources/domain";
+import { checkWeek, isPreparing, prepareWeekAnswers } from "@/lib/study/prepare";
+import { resolveTarget } from "@/lib/study/targets";
+import type { AnswerSet, Favorite, Settings, SourceKind, TargetType, Variant } from "@/lib/types";
+import { currentWeek } from "@/lib/week";
+import { notifyChange } from "@/lib/client/use-data";
+
+export class UserError extends Error {}
+
+export interface Target {
+  weekId: string;
+  targetType: TargetType;
+  targetId: string;
+}
+
+/** Lädt die Einstellungen und richtet den KI-Zugang ein. */
+async function withAi() {
+  const settings = await store.getSettings();
+  configureAi(settings.anthropicKey, settings.anthropicModel);
+  return settings;
+}
+
+export async function isAiReady() {
+  await withAi();
+  return aiEnabled();
+}
+
+/* ── Woche vorbereiten ───────────────────────────────────────────── */
+
+export async function prepareWeek(opts: { year?: number; week?: number; force?: boolean; onProgress?: (weekId: string) => void } = {}) {
+  const settings = await withAi();
+  const cw = currentWeek();
+  const result = await checkWeek(store, opts.year ?? cw.year, opts.week ?? cw.week, { search: settings.useWebSearch });
+  const [article, workbook] = await Promise.all([store.getArticle(result.week.id), store.getWorkbook(result.week.id)]);
+  const hasContent = Boolean(article || workbook);
+  notifyChange();
+  let run: Promise<void> | null = null;
+  if (hasContent && !isPreparing(result.week.id)) {
+    run = prepareWeekAnswers(store, result.week.id, {
+      force: opts.force,
+      onProgress: () => opts.onProgress?.(result.week.id),
+    }).finally(notifyChange);
+  }
+  return { week: result.week, notes: result.notes, hasContent, run };
+}
+
+/* ── KI ──────────────────────────────────────────────────────────── */
+
+export async function generateAnswers(t: Target, mode: "generate" | "regenerate"): Promise<AnswerSet> {
+  const settings = await withAi();
+  const target = await resolveTarget(store, t.weekId, t.targetType, t.targetId);
+  const previous = await store.getAnswer(t.targetType, t.targetId);
+  let answer = await generateAnswerSet(store, target, settings);
+  if (mode === "regenerate" && previous) {
+    const now = new Date().toISOString();
+    const kept = [previous.short, previous.detailed, previous.personal].map((text) => ({
+      id: crypto.randomUUID(),
+      kind: "variante" as const,
+      text,
+      scriptures: previous.scriptures,
+      createdAt: now,
+    }));
+    answer = await store.saveAnswer({ ...answer, extraComments: [...answer.extraComments, ...kept] });
+  }
+  notifyChange();
+  return answer;
+}
+
+export async function moreComments(t: Target): Promise<AnswerSet> {
+  const settings = await withAi();
+  const target = await resolveTarget(store, t.weekId, t.targetType, t.targetId);
+  const answer = await generateComments(store, target, settings);
+  notifyChange();
+  return answer;
+}
+
+export async function ask(t: Target, messages: ChatTurn[]) {
+  if (!messages.length || messages[0].role !== "user" || messages.at(-1)!.role !== "user") {
+    throw new UserError("Der Verlauf muss mit einer Frage beginnen und enden.");
+  }
+  const settings = await withAi();
+  const target = await resolveTarget(store, t.weekId, t.targetType, t.targetId);
+  return askAssistant(target, messages.slice(-20), settings.useWebSearch);
+}
+
+/* ── Fortschritt, Notizen, Favoriten, Einstellungen ─────────────── */
+
+export async function setPrepared(t: Target, prepared: boolean) {
+  await resolveTarget(store, t.weekId, t.targetType, t.targetId);
+  await store.setProgress({ ...t, prepared });
+  notifyChange();
+}
+
+export async function saveNote(t: Target, text: string) {
+  if (text.length > 20000) throw new UserError("Die Notiz ist zu lang.");
+  await resolveTarget(store, t.weekId, t.targetType, t.targetId);
+  return store.saveNote({ ...t, text });
+}
+
+export async function addFavorite(t: Target, f: { variant: Variant | "comment"; label: string; text: string }): Promise<Favorite> {
+  const target = await resolveTarget(store, t.weekId, t.targetType, t.targetId);
+  const fav = await store.addFavorite({ ...t, ...f, href: target.href });
+  notifyChange();
+  return fav;
+}
+
+export async function removeFavorite(id: string) {
+  await store.removeFavorite(id);
+  notifyChange();
+}
+
+export async function saveSettings(patch: Partial<Settings>) {
+  const s = await store.saveSettings(patch);
+  notifyChange();
+  return s;
+}
+
+/* ── Quellen ─────────────────────────────────────────────────────── */
+
+export async function addSource(input: { weekId: string; title: string; kind: SourceKind; url: string }) {
+  const check = checkOfficialUrl(input.url);
+  if (!check.ok) throw new UserError(check.reason);
+  if (!input.title.trim()) throw new UserError("Bitte einen Titel angeben.");
+  if (!(await store.getWeekById(input.weekId))) throw new UserError("Woche nicht gefunden.");
+  const res = await store.addSource({
+    weekId: input.weekId,
+    title: input.title.trim().slice(0, 300),
+    kind: input.kind,
+    url: check.url,
+    publishedAt: null,
+    verification: "user_confirmed",
+    origin: "manual",
+    contentHash: null,
+    note: "Manuell verknüpft.",
+  });
+  if (!res.duplicate) {
+    const imp = (await store.listSources(input.weekId)).find((s) => s.kind === input.kind && s.verification === "user_import" && !s.url);
+    if (imp) await store.updateSource(imp.id, { url: check.url });
+  }
+  notifyChange();
+  return res;
+}
+
+export async function setSourceVerification(id: string, verification: "user_confirmed" | "rejected") {
+  const source = (await store.listSources()).find((s) => s.id === id);
+  if (!source) throw new UserError("Quelle nicht gefunden.");
+  if (source.verification === "user_import") throw new UserError("Importierte Quellen werden über den Import verwaltet.");
+  await store.updateSource(id, { verification });
+  notifyChange();
+}
+
+export async function deleteSource(id: string) {
+  const source = (await store.listSources()).find((s) => s.id === id);
+  if (!source) throw new UserError("Quelle nicht gefunden.");
+  if (source.verification === "user_import") throw new UserError("Importierte Quellen können nicht einzeln gelöscht werden.");
+  await store.deleteSource(id);
+  notifyChange();
+}
+
+/* ── Import ──────────────────────────────────────────────────────── */
+
+const MAX_TEXT = 600_000;
+
+export interface ImportPreview {
+  method: "heuristic" | "ai";
+  origin: "pdf" | "text";
+  pages: number | null;
+  chars: number;
+  contentHash: string;
+  duplicate: boolean;
+  parsed: ParsedArticle | ParsedWorkbook;
+  notes: string[];
+}
+
+export async function previewImport(input: {
+  kind: "watchtower" | "workbook";
+  weekId: string;
+  ai: "auto" | "on" | "off";
+  file?: File | null;
+  text?: string;
+}): Promise<ImportPreview> {
+  const week = await store.getWeekById(input.weekId);
+  if (!week) throw new UserError("Woche nicht gefunden.");
+  let raw: string;
+  let origin: "pdf" | "text";
+  let pages: number | null = null;
+  if (input.file) {
+    const pdf = await extractPdfText(input.file);
+    raw = pdf.text;
+    pages = pdf.pages;
+    origin = "pdf";
+  } else {
+    raw = input.text ?? "";
+    origin = "text";
+  }
+  if (raw.length > MAX_TEXT) throw new UserError("Der Text ist zu lang (max. 600 000 Zeichen).");
+  const text = normalizeImportText(raw);
+  if (text.length < 200) throw new UserError("Zu wenig Text gefunden. Bitte den vollständigen Abschnitt verwenden.");
+
+  const { weekRange } = await import("@/lib/week");
+  const range = weekRange(week.year, week.week);
+  let method: ImportPreview["method"] = "heuristic";
+  let parsed: ParsedArticle | ParsedWorkbook = input.kind === "watchtower" ? parseWatchtowerText(text) : parseWorkbookText(text);
+  const poor =
+    input.kind === "watchtower"
+      ? (parsed as ParsedArticle).paragraphs.filter((p) => p.question).length < 3
+      : (parsed as ParsedWorkbook).items.length < 3;
+  const wantAi = input.ai === "on" || (input.ai === "auto" && (poor || text.length > 40_000));
+  const notes: string[] = [];
+  if (wantAi && (await isAiReady())) {
+    parsed = input.kind === "watchtower" ? await extractArticleWithAi(text, range) : await extractWorkbookWithAi(text, range);
+    method = "ai";
+  } else if (wantAi) {
+    notes.push("Für ganze Ausgaben wird die KI benötigt (API-Schlüssel in den Einstellungen fehlt). Tipp: nur den Text der gewünschten Woche einfügen.");
+  }
+  const hash = await contentHash(text);
+  const duplicate = (await store.listSources(week.id)).some((s) => s.contentHash === hash);
+  return { method, origin, pages, chars: text.length, contentHash: hash, duplicate, parsed, notes };
+}
+
+const s = (max: number) => z.string().max(max);
+const opt = (max: number) => z.string().max(max).nullable().optional();
+
+const ArticleData = z.object({
+  title: s(300).min(1, "Titel fehlt"),
+  studyNumber: opt(10),
+  issue: opt(100),
+  publishedAt: opt(100),
+  themeScripture: opt(1000),
+  song: opt(200),
+  intro: opt(3000),
+  paragraphs: z.array(z.object({ number: s(10).min(1), originalText: s(20000).min(1), question: s(2000) })).min(1, "Mindestens ein Absatz").max(60),
+});
+
+const WorkbookData = z.object({
+  title: s(300).min(1, "Titel fehlt"),
+  bibleReading: opt(200),
+  items: z
+    .array(
+      z.object({
+        section: z.enum(["schaetze", "dienst", "leben", "versammlungsbibelstudium"]),
+        title: s(300).min(1),
+        duration: opt(20),
+        originalText: s(20000),
+        questions: z.array(s(2000)).max(30),
+      }),
+    )
+    .min(1, "Mindestens ein Programmpunkt")
+    .max(40),
+});
+
+const clean = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
+
+export class DuplicateImportError extends UserError {}
+
+export async function saveImport(input: {
+  weekId: string;
+  kind: "watchtower" | "workbook";
+  origin: "pdf" | "text" | "manual";
+  contentHash: string | null;
+  sourceUrl: string | null;
+  overwrite: boolean;
+  data: unknown;
+}) {
+  const week = await store.getWeekById(input.weekId);
+  if (!week) throw new UserError("Woche nicht gefunden.");
+  let url: string | null = null;
+  if (input.sourceUrl?.trim()) {
+    const check = checkOfficialUrl(input.sourceUrl);
+    if (!check.ok) throw new UserError(check.reason);
+    url = check.url;
+  }
+  const existing = input.kind === "watchtower" ? await store.getArticle(week.id) : await store.getWorkbook(week.id);
+  if (existing && !input.overwrite) throw new DuplicateImportError("Für diese Woche ist bereits ein Inhalt importiert.");
+  const sources = await store.listSources(week.id);
+  if (input.contentHash && !input.overwrite && sources.some((x) => x.contentHash === input.contentHash)) {
+    throw new DuplicateImportError("Diese Veröffentlichung wurde bereits importiert.");
+  }
+  const importUrl = url && sources.some((x) => x.url === url) ? null : url;
+
+  const registerSource = async (title: string, kind: "watchtower" | "workbook", publishedAt: string | null) => {
+    const res = await store.addSource({
+      weekId: week.id,
+      title,
+      kind,
+      url: importUrl,
+      publishedAt,
+      verification: "user_import",
+      origin: input.origin,
+      contentHash: input.contentHash,
+      note: "Inhalt vom Benutzer importiert.",
+    });
+    if (res.duplicate) await store.updateSource(res.source.id, { title, publishedAt });
+    return res.source;
+  };
+
+  if (input.kind === "watchtower") {
+    const d = ArticleData.safeParse(input.data);
+    if (!d.success) throw new UserError(d.error.issues[0]?.message ?? "Ungültige Artikeldaten.");
+    const source = await registerSource(`Wachtturm-Studienartikel: ${d.data.title}`, "watchtower", clean(d.data.issue) ?? clean(d.data.publishedAt));
+    await store.saveArticle({
+      weekId: week.id,
+      title: d.data.title.trim(),
+      studyNumber: clean(d.data.studyNumber),
+      issue: clean(d.data.issue),
+      publishedAt: clean(d.data.publishedAt),
+      themeScripture: clean(d.data.themeScripture),
+      song: clean(d.data.song),
+      intro: clean(d.data.intro),
+      imageUrl: null,
+      sourceId: source.id,
+      sourceUrl: url,
+      paragraphs: d.data.paragraphs.map((p, i) => ({
+        position: i + 1,
+        number: p.number.trim(),
+        originalText: p.originalText.trim(),
+        question: p.question.trim(),
+        scriptures: scriptureLabels(p.originalText),
+      })),
+    });
+  } else {
+    const d = WorkbookData.safeParse(input.data);
+    if (!d.success) throw new UserError(d.error.issues[0]?.message ?? "Ungültige Arbeitsheftdaten.");
+    const source = await registerSource(`Arbeitsheft-Woche: ${d.data.title}`, "workbook", null);
+    await store.saveWorkbook({
+      weekId: week.id,
+      title: d.data.title.trim(),
+      bibleReading: clean(d.data.bibleReading),
+      sourceId: source.id,
+      sourceUrl: url,
+      items: d.data.items.map((it, i) => ({
+        section: it.section,
+        position: i + 1,
+        title: it.title.trim(),
+        duration: clean(it.duration),
+        originalText: it.originalText.trim(),
+        questions: it.questions.map((q) => q.trim()).filter(Boolean),
+        scriptures: scriptureLabels(`${it.title}\n${it.originalText}`),
+      })),
+    });
+  }
+  await store.updateWeek(week.id, { status: "importiert" });
+  notifyChange();
+}
