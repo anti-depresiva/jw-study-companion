@@ -80,3 +80,47 @@ describe("Wachtturm-Ausgabe mit mehreren Studienartikeln", () => {
     expect(cands.find((c) => c.number === "48")?.text).not.toContain("Geduld");
   });
 });
+
+// Nachbildung des echten jw.org-PDF-Layouts (eigener Text): Sperrsatz-Kopfzeile mit
+// angeklebter Seitenzahl, Kopfzeile teils am Seitenende, zerlegte Umlaute, Steuerzeichen.
+const D = String.fromCharCode(0xa8);
+const C = String.fromCharCode(2);
+const pdfWeek = (header: string, headerAtEnd: boolean) => {
+  const body = `${C}${C} SCH ${D}\nATZE\nAUS GOTTES WORT\n1. Ein Beispielthema, das\nüber zwei Zeilen läuft\n(10 Min.)\nSprich ${D}\nuber den Text. Was k ${D}\nonnte helfen?\n2. Nach geistigen Sch ${D}\natzen graben (10 Min.)\n3. Bibellesung (4 Min.)\nUNS IM DIENST\nVERBESSERN\n4. Gespr ${D}\nache beginnen (3 Min.)\n5. Was w ${D}\nurdest du sagen? (5 Min.) Besprechung.`;
+  const second = `7\nUNSER LEBEN\nALS CHRIST\n6. Ein Punkt (15 Min.)\nText.\n7. Versammlungsbibelstudium (30 Min.)\nKapitel 1.`;
+  return [headerAtEnd ? `${body}\n${header}` : `${header}\n${body}`, second];
+};
+const PDF_PAGES = [
+  "TITELSEITE",
+  ...pdfWeek("2 . - 8 . N OVEMB ER JE R E M IA 4 9 - 5 0", true),
+  ...pdfWeek("62 3 . - 2 9. N OVEMB ER KLAG E LI E D E R 3 - 5", false),
+  ...pdfWeek("128 . D EZEMB ER– 3 . JAN UAR H E S E KI E L 9 - 10", false),
+  "169. -1 5 . N OVEMB ER\nRückseite mit Hinweis",
+];
+
+describe("Arbeitsheft-PDF im jw.org-Layout", () => {
+  it("erkennt die Wochen seitenweise trotz Sperrsatz und Seitenzahl", async () => {
+    const { splitWorkbookPages } = await import("@/lib/import/split");
+    const all = splitWorkbookPages(PDF_PAGES, 2026, 48);
+    expect(all.weeks.map((w) => `${w.year}-${w.week}`)).toEqual(["2026-45", "2026-48", "2026-53"]);
+    expect(all.bibleReading).toBe("Klagelieder 3-5");
+    const wb = parseWorkbookText(all.text!);
+    expect(wb.items.map((i) => [i.section, i.title, i.duration])).toEqual([
+      ["schaetze", "Ein Beispielthema, das über zwei Zeilen läuft", "10 Min."],
+      ["schaetze", "Nach geistigen Schätzen graben", "10 Min."],
+      ["schaetze", "Bibellesung", "4 Min."],
+      ["dienst", "Gespräche beginnen", "3 Min."],
+      ["dienst", "Was würdest du sagen?", "5 Min."],
+      ["leben", "Ein Punkt", "15 Min."],
+      ["versammlungsbibelstudium", "Versammlungsbibelstudium", "30 Min."],
+    ]);
+    expect(wb.items[0].originalText).toContain("Sprich über den Text");
+    expect(wb.items[0].questions).toEqual(["Was könnte helfen?"]);
+    expect(wb.items[4].originalText).toBe("Besprechung.");
+  });
+  it("findet die Kopfzeile auch am Seitenende und über den Jahreswechsel", async () => {
+    const { splitWorkbookPages } = await import("@/lib/import/split");
+    expect(splitWorkbookPages(PDF_PAGES, 2026, 45).bibleReading).toBe("Jeremia 49-50");
+    expect(splitWorkbookPages(PDF_PAGES, 2026, 53).bibleReading).toBe("Hesekiel 9-10");
+  });
+});

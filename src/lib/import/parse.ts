@@ -161,6 +161,9 @@ const SECTION_HEADERS: Array<[RegExp, WorkbookSection]> = [
 ];
 const ITEM_START = /^(\d{1,2})\. (.+)$/;
 const DURATION = /\((\d{1,2}) ?Min\.?\)/i;
+/** Kopfzeile einer Woche ohne Leerzeichen, evtl. mit Seitenzahl davor: „623.-29.NOVEMBERKLAGELIEDER3-5“ */
+const WEEK_HEADER =
+  /^\d{0,3}\.?(?:[A-ZÄÖÜ]+\d{0,4})?[-–]\d{1,2}\.(JANUAR|JÄNNER|FEBRUAR|MÄRZ|APRIL|MAI|JUNI|JULI|AUGUST|SEPTEMBER|OKTOBER|NOVEMBER|DEZEMBER)/;
 
 /** Heuristischer Parser für eine Woche aus dem Arbeitsheft „Unser Leben und Dienst als Christ“. */
 export function parseWorkbookText(raw: string): ParsedWorkbook {
@@ -188,7 +191,11 @@ export function parseWorkbookText(raw: string): ParsedWorkbook {
     current = null;
   };
 
-  for (const line of lines) {
+  let lastNumber = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Kopfzeilen (Datum/Bibelbuch, oft im Sperrsatz) und reine Seitenzahlen überspringen
+    if (WEEK_HEADER.test(line.replace(/\s+/g, "")) || /^\d{1,2}$/.test(line)) continue;
     const header = SECTION_HEADERS.find(([re]) => re.test(line));
     if (header) {
       flush();
@@ -196,16 +203,33 @@ export function parseWorkbookText(raw: string): ParsedWorkbook {
       continue;
     }
     const m = line.match(ITEM_START);
-    if (m) {
+    // Programmpunkte sind aufsteigend nummeriert (kleine Lücken bei Auszügen erlaubt) –
+    // andere „6. …“-Zeilen mitten im Text sind kein neuer Punkt
+    const n = m ? Number(m[1]) : 0;
+    if (m && n > lastNumber && n <= lastNumber + 3 && n <= 9) {
       flush();
-      const titleRaw = m[2];
-      const duration = titleRaw.match(DURATION)?.[1] ?? null;
-      const title = titleRaw.replace(DURATION, " ").replace(/\s{2,}/g, " ").replace(/[\s:]+$/, "").trim();
+      lastNumber = n;
+      let titleRaw = m[2];
+      // Titel läuft oft bis zur Zeitangabe über 1–2 Folgezeilen: „1. Gib bei … nicht auf“ / „(10 Min.)“
+      if (!DURATION.test(titleRaw)) {
+        for (let k = 1; k <= 2 && i + k < lines.length; k++) {
+          const next = lines[i + k];
+          if (ITEM_START.test(next) || SECTION_HEADERS.some(([re]) => re.test(next))) break;
+          if (DURATION.test(next)) {
+            titleRaw = [titleRaw, ...lines.slice(i + 1, i + k + 1)].join(" ");
+            i += k;
+            break;
+          }
+        }
+      }
+      const dm = titleRaw.match(DURATION);
+      const title = (dm ? titleRaw.slice(0, dm.index) : titleRaw).replace(/\s{2,}/g, " ").replace(/[\s:]+$/, "").trim();
+      const after = dm ? titleRaw.slice((dm.index ?? 0) + dm[0].length).trim() : "";
       current = {
         section: /Versammlungsbibelstudium/i.test(title) ? "versammlungsbibelstudium" : section,
         title,
-        duration: duration ? `${duration} Min.` : null,
-        originalText: "",
+        duration: dm ? `${dm[1]} Min.` : null,
+        originalText: after ? `${after}\n` : "",
         questions: [],
         scriptures: [],
       };

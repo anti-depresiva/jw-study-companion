@@ -17,7 +17,7 @@ import { checkWeek, isPreparing, prepareWeekAnswers } from "@/lib/study/prepare"
 import { resolveTarget } from "@/lib/study/targets";
 import type { AnswerSet, Favorite, Settings, SourceKind, TargetType, Variant } from "@/lib/types";
 import { currentWeek, formatRange, weekRange } from "@/lib/week";
-import { describeWeeks, splitWatchtowerArticles, splitWorkbookWeeks } from "@/lib/import/split";
+import { describeWeeks, splitWatchtowerArticles, splitWorkbookPages, splitWorkbookWeeks } from "@/lib/import/split";
 import { notifyChange } from "@/lib/client/use-data";
 
 export class UserError extends Error {}
@@ -203,10 +203,12 @@ export async function previewImport(input: {
   let raw: string;
   let origin: "pdf" | "text";
   let pages: number | null = null;
+  let pageTexts: string[] | null = null;
   if (input.file) {
     const pdf = await extractPdfText(input.file);
     raw = pdf.text;
     pages = pdf.pages;
+    pageTexts = pdf.pageTexts;
     origin = "pdf";
   } else {
     raw = input.text ?? "";
@@ -225,11 +227,14 @@ export async function previewImport(input: {
   // 1) Ganze Ausgaben ohne KI zerlegen: nur den Teil der gewünschten Woche verwenden.
   let part = text;
   let containsWeek = true;
+  let weekBibleReading: string | null = null;
   if (input.kind === "workbook") {
-    const split = splitWorkbookWeeks(text, week.year, week.week);
+    const byPage = pageTexts && pageTexts.length > 1 ? splitWorkbookPages(pageTexts, week.year, week.week) : null;
+    const split = byPage && byPage.weeks.length >= 2 ? byPage : splitWorkbookWeeks(text, week.year, week.week);
     if (split.weeks.length >= 2) {
       if (split.text) {
         part = split.text;
+        weekBibleReading = split.bibleReading;
         notes.push(`Die Datei enthält ${split.weeks.length} Wochen – übernommen wird ${label}. Die anderen Wochen kannst du dort mit derselben Datei importieren.`);
       } else {
         containsWeek = false;
@@ -272,6 +277,13 @@ export async function previewImport(input: {
     method = "ai";
   } else if (wantAi && poor) {
     notes.push("Die Struktur wurde nicht sicher erkannt. Mit API-Schlüssel (Einstellungen) erkennt die KI sie zuverlässiger – oder bitte unten prüfen und ergänzen.");
+  }
+
+  if (input.kind === "workbook" && method === "heuristic") {
+    const wb = parsed as ParsedWorkbook;
+    // Kopfzeile der Woche liefert Bibelleseprogramm und einen sauberen Titel
+    if (weekBibleReading) wb.bibleReading = weekBibleReading;
+    if (part !== text || !wb.title.includes("Woche")) wb.title = `Woche ${formatRange(range.start, range.end)}`;
   }
 
   const items = input.kind === "watchtower" ? (parsed as ParsedArticle).paragraphs.length : (parsed as ParsedWorkbook).items.length;
