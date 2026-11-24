@@ -16,7 +16,8 @@ import { checkOfficialUrl } from "@/lib/sources/domain";
 import { checkWeek, isPreparing, prepareWeekAnswers } from "@/lib/study/prepare";
 import { resolveTarget } from "@/lib/study/targets";
 import type { AnswerSet, Favorite, Settings, SourceKind, TargetType, Variant } from "@/lib/types";
-import { currentWeek } from "@/lib/week";
+import { currentWeek, formatRange, weekRange } from "@/lib/week";
+import { describeWeeks, splitWatchtowerArticles, splitWorkbookWeeks } from "@/lib/import/split";
 import { notifyChange } from "@/lib/client/use-data";
 
 export class UserError extends Error {}
@@ -184,6 +185,8 @@ export interface ImportPreview {
   duplicate: boolean;
   parsed: ParsedArticle | ParsedWorkbook;
   notes: string[];
+  /** Bei Wachtturm-Ausgaben mit mehreren Studienartikeln */
+  articleChoices: Array<{ number: string; title: string; weekLabel: string | null }>;
 }
 
 export async function previewImport(input: {
@@ -192,6 +195,8 @@ export async function previewImport(input: {
   ai: "auto" | "on" | "off";
   file?: File | null;
   text?: string;
+  /** Gewählter Studienartikel (Nummer) bei ganzen Ausgaben */
+  article?: string;
 }): Promise<ImportPreview> {
   const week = await store.getWeekById(input.weekId);
   if (!week) throw new UserError("Woche nicht gefunden.");
@@ -211,25 +216,72 @@ export async function previewImport(input: {
   const text = normalizeImportText(raw);
   if (text.length < 200) throw new UserError("Zu wenig Text gefunden. Bitte den vollständigen Abschnitt verwenden.");
 
-  const { weekRange } = await import("@/lib/week");
   const range = weekRange(week.year, week.week);
+  const label = `KW ${week.week} (${formatRange(range.start, range.end)})`;
+  const notes: string[] = [];
+  const aiReady = await isAiReady();
+  let articleChoices: ImportPreview["articleChoices"] = [];
+
+  // 1) Ganze Ausgaben ohne KI zerlegen: nur den Teil der gewünschten Woche verwenden.
+  let part = text;
+  let containsWeek = true;
+  if (input.kind === "workbook") {
+    const split = splitWorkbookWeeks(text, week.year, week.week);
+    if (split.weeks.length >= 2) {
+      if (split.text) {
+        part = split.text;
+        notes.push(`Die Datei enthält ${split.weeks.length} Wochen – übernommen wird ${label}. Die anderen Wochen kannst du dort mit derselben Datei importieren.`);
+      } else {
+        containsWeek = false;
+        if (!aiReady) throw new UserError(`${label} ist in dieser Datei nicht enthalten. Enthalten sind: ${describeWeeks(split.weeks)}.`);
+      }
+    }
+  } else {
+    const cands = splitWatchtowerArticles(text, week.year, week.week);
+    if (cands.length >= 2) {
+      articleChoices = cands.map((c) => ({
+        number: c.number,
+        title: c.title,
+        weekLabel: c.week ? describeWeeks([c.week]) : null,
+      }));
+      const chosen =
+        (input.article && cands.find((c) => c.number === input.article)) ||
+        cands.find((c) => c.week?.year === week.year && c.week.week === week.week);
+      if (chosen) {
+        part = chosen.text;
+        notes.push(`Die Ausgabe enthält ${cands.length} Studienartikel – übernommen wird Studienartikel ${chosen.number}.`);
+      } else if (!aiReady) {
+        part = cands[0].text;
+        notes.push(`Die Ausgabe enthält ${cands.length} Studienartikel; die Studienwoche wurde nicht automatisch erkannt. Bitte oben den richtigen Artikel wählen.`);
+      } else {
+        containsWeek = false;
+      }
+    }
+  }
+
+  // 2) Textmuster-Erkennung; KI nur, wenn nötig (oder ausdrücklich gewünscht).
   let method: ImportPreview["method"] = "heuristic";
-  let parsed: ParsedArticle | ParsedWorkbook = input.kind === "watchtower" ? parseWatchtowerText(text) : parseWorkbookText(text);
+  let parsed: ParsedArticle | ParsedWorkbook = input.kind === "watchtower" ? parseWatchtowerText(part) : parseWorkbookText(part);
   const poor =
     input.kind === "watchtower"
       ? (parsed as ParsedArticle).paragraphs.filter((p) => p.question).length < 3
-      : (parsed as ParsedWorkbook).items.length < 3;
-  const wantAi = input.ai === "on" || (input.ai === "auto" && (poor || text.length > 40_000));
-  const notes: string[] = [];
-  if (wantAi && (await isAiReady())) {
-    parsed = input.kind === "watchtower" ? await extractArticleWithAi(text, range) : await extractWorkbookWithAi(text, range);
+      : (parsed as ParsedWorkbook).items.length < 3 || (parsed as ParsedWorkbook).items.length > 15;
+  const wantAi = input.ai === "on" || (input.ai === "auto" && (poor || !containsWeek));
+  if (wantAi && aiReady) {
+    parsed = input.kind === "watchtower" ? await extractArticleWithAi(part, range) : await extractWorkbookWithAi(part, range);
     method = "ai";
-  } else if (wantAi) {
-    notes.push("Für ganze Ausgaben wird die KI benötigt (API-Schlüssel in den Einstellungen fehlt). Tipp: nur den Text der gewünschten Woche einfügen.");
+  } else if (wantAi && poor) {
+    notes.push("Die Struktur wurde nicht sicher erkannt. Mit API-Schlüssel (Einstellungen) erkennt die KI sie zuverlässiger – oder bitte unten prüfen und ergänzen.");
   }
-  const hash = await contentHash(text);
+
+  const items = input.kind === "watchtower" ? (parsed as ParsedArticle).paragraphs.length : (parsed as ParsedWorkbook).items.length;
+  if (items > (input.kind === "watchtower" ? 80 : 40)) {
+    throw new UserError("Es wurden ungewöhnlich viele Abschnitte erkannt – vermutlich enthält die Datei mehrere Wochen, deren Datumszeilen nicht gefunden wurden. Bitte nur den Text der gewünschten Woche einfügen.");
+  }
+
+  const hash = await contentHash(part);
   const duplicate = (await store.listSources(week.id)).some((s) => s.contentHash === hash);
-  return { method, origin, pages, chars: text.length, contentHash: hash, duplicate, parsed, notes };
+  return { method, origin, pages, chars: part.length, contentHash: hash, duplicate, parsed, notes, articleChoices };
 }
 
 const s = (max: number) => z.string().max(max);
@@ -243,7 +295,7 @@ const ArticleData = z.object({
   themeScripture: opt(1000),
   song: opt(200),
   intro: opt(3000),
-  paragraphs: z.array(z.object({ number: s(10).min(1), originalText: s(20000).min(1), question: s(2000) })).min(1, "Mindestens ein Absatz").max(60),
+  paragraphs: z.array(z.object({ number: s(10).min(1), originalText: s(20000).min(1), question: s(2000) })).min(1, "Mindestens ein Absatz").max(80, "Zu viele Absätze (max. 80) – bitte nur einen Studienartikel importieren."),
 });
 
 const WorkbookData = z.object({
@@ -260,7 +312,7 @@ const WorkbookData = z.object({
       }),
     )
     .min(1, "Mindestens ein Programmpunkt")
-    .max(40),
+    .max(40, "Zu viele Programmpunkte (max. 40) – bitte nur eine Woche importieren."),
 });
 
 const clean = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);

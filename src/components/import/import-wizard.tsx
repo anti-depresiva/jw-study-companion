@@ -104,6 +104,8 @@ export function ImportWizard(props: Props) {
   const [workbook, setWorkbook] = useState<WorkbookDraft | null>(props.initialMode === "manual" && props.kind === "workbook" ? emptyWorkbook() : null);
   const [sourceUrl, setSourceUrl] = useState(props.suggestedUrls[0]?.url ?? "");
   const [overwrite, setOverwrite] = useState(false);
+  const [choices, setChoices] = useState<Array<{ number: string; title: string; weekLabel: string | null }>>([]);
+  const [chosen, setChosen] = useState("");
 
   const isWt = props.kind === "watchtower";
   const draftReady = isWt ? article !== null : workbook !== null;
@@ -120,7 +122,7 @@ export function ImportWizard(props: Props) {
     }
   }
 
-  async function analyze() {
+  async function analyze(articleNumber?: string) {
     if (mode === "pdf" && !file) return toast.error("Bitte eine PDF-Datei auswählen.");
     setLoading(true);
     try {
@@ -130,7 +132,9 @@ export function ImportWizard(props: Props) {
         ai: useAi,
         file: mode === "pdf" ? file : null,
         text: mode === "pdf" ? undefined : text,
+        article: articleNumber,
       });
+      setChoices(res.articleChoices ?? []);
       setPreview({
         method: res.method,
         origin: res.origin,
@@ -252,7 +256,7 @@ export function ImportWizard(props: Props) {
                 <option value="off">Nur Textmuster</option>
               </select>
             </label>
-            <Button onClick={analyze} disabled={loading} className="ml-auto h-10 px-4">
+            <Button onClick={() => analyze()} disabled={loading} className="ml-auto h-10 px-4">
               {loading ? <Loader2 className="animate-spin" /> : <Sparkles />}
               {loading ? "Wird analysiert …" : "Analysieren"}
             </Button>
@@ -280,6 +284,30 @@ export function ImportWizard(props: Props) {
                 </p>
               )}
             </div>
+          )}
+
+          {isWt && choices.length > 1 && (
+            <label className="block rounded-xl border bg-card p-4 text-sm">
+              <span className="mb-1.5 block font-semibold">Studienartikel aus dieser Ausgabe</span>
+              <select
+                className="h-10 w-full rounded-lg border bg-background px-2.5"
+                value={chosen}
+                disabled={loading}
+                onChange={(e) => {
+                  setChosen(e.target.value);
+                  analyze(e.target.value);
+                }}
+              >
+                <option value="">Automatisch (passend zur Woche)</option>
+                {choices.map((c) => (
+                  <option key={c.number} value={c.number}>
+                    Studienartikel {c.number}
+                    {c.title ? ` – ${c.title.slice(0, 50)}` : ""}
+                    {c.weekLabel ? ` · ${c.weekLabel}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
 
           {isWt && article && <ArticleEditor draft={article} onChange={setArticle} />}
