@@ -2,6 +2,7 @@ import type { StudyViewProps } from "@/components/study/study-view";
 import { importHref } from "@/lib/routes";
 import { bibleLookupUrl } from "@/lib/sources/links";
 import { findScriptures } from "@/lib/scripture";
+import { findReferences } from "@/lib/references";
 import type { Favorite } from "@/lib/types";
 import { SECTION_TITLES } from "@/lib/types";
 import type { WeekData } from "./load";
@@ -43,6 +44,8 @@ export function buildStudyViewProps(t: ResolvedTarget, data: WeekData, favorites
     favoriteTexts: favorites.filter((f) => f.targetId === targetId).map((f) => ({ id: f.id, text: f.text })),
     favLabel: t.type === "paragraph" ? `Wachtturm · Absatz ${t.paragraph.number}` : `Arbeitsheft · ${t.item.title}`,
     aiEnabled: aiReady,
+    references: findReferences(`${t.originalText}\n${t.question}`),
+    lookups: data.lookups.filter((l) => l.targetType === t.type && l.targetId === targetId),
     importHref: importHref(t.week.year, t.week.week, t.type === "paragraph" ? "watchtower" : "workbook"),
     ...nav,
   };

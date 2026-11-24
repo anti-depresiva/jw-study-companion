@@ -216,3 +216,29 @@ export interface ProgressEntry {
   prepared: boolean;
   updatedAt: string;
 }
+
+/** Ergebnis von „Claude schlägt nach“ zu einem Verweis (z. B. „w24.01 30 Abs. 16“). */
+export interface Lookup {
+  id: string;
+  weekId: string;
+  targetType: TargetType;
+  targetId: string;
+  reference: string;
+  text: string;
+  sources: Array<{ title: string; url: string }>;
+  warnings: string[];
+  model: string;
+  createdAt: string;
+}
+
+/** Bild aus einer importierten PDF – nur auf dem Gerät gespeichert. */
+export interface StoredImage {
+  id: string;
+  weekId: string;
+  kind: "workbook" | "watchtower";
+  page: number;
+  width: number;
+  height: number;
+  blob: Blob;
+  createdAt: string;
+}

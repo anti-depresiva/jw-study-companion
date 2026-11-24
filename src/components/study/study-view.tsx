@@ -30,11 +30,14 @@ import { ButtonLink } from "@/components/ui/button-link";
 import { Textarea } from "@/components/ui/textarea";
 import * as actions from "@/lib/actions";
 import { NoSourceError } from "@/lib/study/targets";
-import type { AnswerSet, SourceRef, TargetType, Variant } from "@/lib/types";
+import type { AnswerSet, Lookup, SourceRef, TargetType, Variant } from "@/lib/types";
+import type { Reference } from "@/lib/references";
+import { References } from "./references";
 import { COMMENT_KIND_LABELS } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ContentLabel } from "./labels";
 import { OfficialSources } from "./source-block";
+import { WeekImages } from "./week-images";
 
 export interface StudyViewProps {
   targetType: TargetType;
@@ -57,6 +60,8 @@ export interface StudyViewProps {
   favLabel: string;
   aiEnabled: boolean;
   importHref: string;
+  references: Reference[];
+  lookups: Lookup[];
   backHref: string;
   backLabel: string;
   prev: { href: string; label: string } | null;
@@ -166,6 +171,8 @@ export function StudyView(props: StudyViewProps) {
           </div>
         )}
       </Collapsible>
+
+      <WeekImages weekId={props.weekId} kind={props.targetType === "paragraph" ? "watchtower" : "workbook"} className="mb-6" />
 
       {/* KI-Antworten */}
       {!answer ? (
@@ -288,6 +295,8 @@ export function StudyView(props: StudyViewProps) {
           </ul>
         </section>
       )}
+
+      <References target={target} references={props.references} lookups={props.lookups} aiEnabled={props.aiEnabled} />
 
       <div className="mb-6">
         <OfficialSources sourceRef={answer?.sourceRef ?? props.sourceRef} />

@@ -22,6 +22,15 @@ export const jwSearchTool = (maxUses: number): BetaToolUnion => ({
   allowed_domains: SEARCH_ALLOWED_DOMAINS,
 });
 
+/** Seiten von jw.org lesen (nur URLs aus Suchergebnissen bzw. dem Gespräch). */
+export const jwFetchTool = (maxUses: number): BetaToolUnion => ({
+  type: "web_fetch_20260209",
+  name: "web_fetch",
+  max_uses: maxUses,
+  allowed_domains: SEARCH_ALLOWED_DOMAINS,
+  max_content_tokens: 20000,
+});
+
 /** Sammelt alle URLs aus Suchergebnissen und Zitaten – nur jw.org wird übernommen. */
 export function collectOfficialSources(message: BetaMessage): { sources: FoundSource[]; blocked: number } {
   const found = new Map<string, FoundSource>();
@@ -37,6 +46,9 @@ export function collectOfficialSources(message: BetaMessage): { sources: FoundSo
   for (const block of message.content) {
     if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
       for (const r of block.content) if (r.type === "web_search_result") add(r.url, r.title);
+    }
+    if (block.type === "web_fetch_tool_result" && block.content.type === "web_fetch_result") {
+      add(block.content.url, block.content.content.title ?? null);
     }
     if (block.type === "text" && block.citations) {
       for (const c of block.citations) if ("url" in c) add(c.url, "title" in c ? c.title : null);
@@ -111,4 +123,66 @@ export async function askAssistant(
   }
   if (blocked) warnings.push(`${blocked} Fundstelle(n) außerhalb von jw.org wurden verworfen.`);
   return { text, sources, blocked, warnings };
+}
+
+/**
+ * „Claude schlägt nach“: Sucht einen Verweis (z. B. „w24.01 30 Abs. 16“) ausschließlich
+ * auf jw.org, liest die Stelle und fasst sie in Bezug auf den Abschnitt zusammen.
+ * Ohne gelesene jw.org-Quelle gibt es kein Ergebnis.
+ */
+export async function lookupReference(
+  t: ResolvedTarget,
+  reference: { text: string; description: string },
+): Promise<{ text: string; sources: FoundSource[]; warnings: string[]; found: boolean }> {
+  const messages: BetaMessageParam[] = [
+    {
+      role: "user",
+      content: `Im Studienmaterial (${t.label}${t.question ? ` – ${t.question}` : ""}) wird auf diese Fundstelle verwiesen: „${reference.text}“ (${reference.description}).
+Symbole von Jehovas Zeugen: „w24.01 30 Abs. 16“ = Der Wachtturm, Ausgabe Januar 2024, Seite 30, Absatz 16; andere Kurzzeichen bezeichnen Bücher und Broschüren.
+1. Finde diese Veröffentlichung auf jw.org bzw. in der Online-Bibliothek wol.jw.org (deutsch) und lies die angegebene Stelle.
+2. Fasse in 3–6 Sätzen zusammen, was dort steht und was davon für diesen Programmpunkt bzw. Absatz hilfreich ist. Nenne Bibelstellen nur, wenn sie an der Stelle selbst stehen.
+3. Nutze ausschließlich Inhalte der gelesenen jw.org-Seiten. Findest du die Stelle nicht sicher, antworte genau: „Dazu konnte keine passende offizielle Quelle auf jw.org gefunden werden.“
+Antworte auf Deutsch in einfachem Fließtext ohne Überschriften.`,
+    },
+  ];
+  const client = getClient();
+  const all: BetaMessage[] = [];
+  let message: BetaMessage | null = null;
+  for (let round = 0; round < 4; round++) {
+    message = await client.beta.messages
+      .stream({
+        model: model(),
+        max_tokens: 6000,
+        betas: [FALLBACK_BETA],
+        fallbacks: "default",
+        system: SYSTEM_PROMPT,
+        output_config: { effort: "low" },
+        tools: [jwSearchTool(3), jwFetchTool(3)],
+        messages,
+      })
+      .finalMessage();
+    all.push(message);
+    if (message.stop_reason !== "pause_turn") break;
+    messages.push({ role: "assistant", content: message.content });
+  }
+  if (!message) throw new Error("Keine Antwort erhalten.");
+  assertUsable(message);
+
+  const found = new Map<string, FoundSource>();
+  let blocked = 0;
+  for (const m of all) {
+    const c = collectOfficialSources(m);
+    c.sources.forEach((s) => found.set(s.url, s));
+    blocked += c.blocked;
+  }
+  const text = textOf(message);
+  const notFound = text.includes("Dazu konnte keine passende offizielle Quelle") || found.size === 0;
+  const warnings: string[] = [];
+  if (blocked) warnings.push(`${blocked} Fundstelle(n) außerhalb von jw.org wurden verworfen.`);
+  return {
+    text: notFound ? "Dazu konnte keine passende offizielle Quelle auf jw.org gefunden werden." : text,
+    sources: notFound ? [] : [...found.values()].slice(0, 5),
+    warnings,
+    found: !notFound,
+  };
 }

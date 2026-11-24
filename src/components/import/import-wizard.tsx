@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import * as actions from "@/lib/actions";
 import { weekHref } from "@/lib/routes";
+import type { PdfImage } from "@/lib/import/images";
+import { ImageThumb } from "@/components/study/week-images";
 import type { WorkbookSection } from "@/lib/types";
 import { SECTION_TITLES } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -106,6 +108,8 @@ export function ImportWizard(props: Props) {
   const [overwrite, setOverwrite] = useState(false);
   const [choices, setChoices] = useState<Array<{ number: string; title: string; weekLabel: string | null }>>([]);
   const [chosen, setChosen] = useState("");
+  const [images, setImages] = useState<PdfImage[]>([]);
+  const [keepImages, setKeepImages] = useState(true);
 
   const isWt = props.kind === "watchtower";
   const draftReady = isWt ? article !== null : workbook !== null;
@@ -135,6 +139,7 @@ export function ImportWizard(props: Props) {
         article: articleNumber,
       });
       setChoices(res.articleChoices ?? []);
+      setImages(res.images ?? []);
       setPreview({
         method: res.method,
         origin: res.origin,
@@ -172,6 +177,7 @@ export function ImportWizard(props: Props) {
         sourceUrl: sourceUrl.trim() || null,
         overwrite,
         data,
+        images: preview?.origin === "pdf" && keepImages ? images : undefined,
       });
       toast.success("Import gespeichert.");
       router.push(weekHref(isWt ? "/wachtturm" : "/arbeitsheft", props.year, props.week));
@@ -312,6 +318,21 @@ export function ImportWizard(props: Props) {
 
           {isWt && article && <ArticleEditor draft={article} onChange={setArticle} />}
           {!isWt && workbook && <WorkbookEditor draft={workbook} onChange={setWorkbook} />}
+
+          {images.length > 0 && (
+            <div className="rounded-2xl border bg-card p-5">
+              <label className="mb-3 flex items-center gap-2 font-semibold">
+                <input type="checkbox" checked={keepImages} onChange={(e) => setKeepImages(e.target.checked)} className="size-4" />
+                {images.length} Bild(er) aus der PDF mitspeichern
+              </label>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {images.map((img, i) => (
+                  <ImageThumb key={i} blob={img.blob} alt={`Bild ${i + 1} (Seite ${img.page})`} />
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">Die Bilder bleiben nur auf diesem Gerät gespeichert.</p>
+            </div>
+          )}
 
           <div className="rounded-2xl border bg-card p-5">
             <Label htmlFor="src" className="mb-2 block font-semibold">

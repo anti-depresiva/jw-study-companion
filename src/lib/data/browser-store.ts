@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from "@/lib/types";
-import type { AnswerSet, Article, Favorite, Note, ProgressEntry, Settings, Source, Week, Workbook } from "@/lib/types";
+import type { AnswerSet, Article, Favorite, Lookup, Note, ProgressEntry, Settings, Source, StoredImage, Week, Workbook } from "@/lib/types";
 import { weekRange } from "@/lib/week";
 import type { NewArticle, NewSource, NewWorkbook, Store } from "./store";
 
@@ -19,6 +19,7 @@ export interface Db {
   notes: Note[];
   favorites: Favorite[];
   progress: ProgressEntry[];
+  lookups: Lookup[];
 }
 
 const emptyDb = (): Db => ({
@@ -32,16 +33,22 @@ const emptyDb = (): Db => ({
   notes: [],
   favorites: [],
   progress: [],
+  lookups: [],
 });
 
 const DB_NAME = "jw-plus-study";
 const STORE = "kv";
 const KEY = "db";
+const IMAGES = "images"; // Bilder getrennt, damit der Datenbestand klein bleibt
 
 function openIdb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+      if (!db.objectStoreNames.contains(IMAGES)) db.createObjectStore(IMAGES, { keyPath: "id" });
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error("Speicher nicht verfügbar."));
   });
@@ -51,13 +58,13 @@ let idb: Promise<IDBDatabase> | null = null;
 let cache: Db | null = null;
 let queue: Promise<unknown> = Promise.resolve();
 
-function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>, storeName = STORE): Promise<T> {
   idb ??= openIdb();
   return idb.then(
     (db) =>
       new Promise<T>((resolve, reject) => {
-        const t = db.transaction(STORE, mode);
-        const req = fn(t.objectStore(STORE));
+        const t = db.transaction(storeName, mode);
+        const req = fn(t.objectStore(storeName));
         t.oncomplete = () => resolve(req.result);
         t.onerror = () => reject(t.error ?? new Error("Speicherfehler."));
         t.onabort = () => reject(t.error ?? new Error("Speichern abgebrochen (Speicher voll?)."));
@@ -340,6 +347,42 @@ export class BrowserStore implements Store {
         (p) => !(p.targetType === entry.targetType && p.targetId === entry.targetId),
       );
       db.progress.push({ ...entry, updatedAt: now() });
+    });
+  }
+
+  listLookups(weekId: string) {
+    return read((db) => db.lookups.filter((l) => l.weekId === weekId));
+  }
+  saveLookup(lookup: Omit<Lookup, "id" | "createdAt">) {
+    return write((db) => {
+      const saved: Lookup = { ...lookup, id: crypto.randomUUID(), createdAt: now() };
+      db.lookups.push(saved);
+      return saved;
+    });
+  }
+  async deleteLookup(id: string) {
+    await write((db) => {
+      db.lookups = db.lookups.filter((l) => l.id !== id);
+    });
+  }
+
+  async listImages(weekId: string, kind?: StoredImage["kind"]) {
+    const all = await tx<StoredImage[]>("readonly", (s) => s.getAll() as IDBRequest<StoredImage[]>, IMAGES);
+    return all.filter((i) => i.weekId === weekId && (!kind || i.kind === kind)).sort((a, b) => a.page - b.page);
+  }
+  async replaceImages(weekId: string, kind: StoredImage["kind"], images: Array<Omit<StoredImage, "id" | "weekId" | "kind" | "createdAt">>) {
+    const old = await this.listImages(weekId, kind);
+    idb ??= openIdb();
+    const db = await idb;
+    await new Promise<void>((resolve, reject) => {
+      const t = db.transaction(IMAGES, "readwrite");
+      const s = t.objectStore(IMAGES);
+      for (const o of old) s.delete(o.id);
+      const createdAt = now();
+      for (const img of images) s.put({ ...img, id: crypto.randomUUID(), weekId, kind, createdAt } satisfies StoredImage);
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error ?? new Error("Bilder konnten nicht gespeichert werden."));
+      t.onabort = () => reject(t.error ?? new Error("Speichern der Bilder abgebrochen (Speicher voll?)."));
     });
   }
 }

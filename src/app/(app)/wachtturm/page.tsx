@@ -4,6 +4,7 @@ import Link from "next/link";
 import { BookMarked, CheckCircle2, Circle, ExternalLink, Upload } from "lucide-react";
 import { ContentLabel } from "@/components/study/labels";
 import { LoadError, Loading } from "@/components/study/loading";
+import { WeekImages } from "@/components/study/week-images";
 import { Container, EmptyState, PageHeader, ProgressBar, WeekSwitcher } from "@/components/study/ui";
 import { ButtonLink, ExternalButtonLink } from "@/components/ui/button-link";
 import { useData } from "@/lib/client/use-data";
@@ -91,6 +92,8 @@ function Article({ data, year, week }: { data: Awaited<ReturnType<typeof loadWee
           )}
         </div>
       </div>
+
+      {data.week && <WeekImages weekId={data.week.id} kind="watchtower" className="mb-6" />}
 
       <ContentLabel kind="original" className="mb-3" />
       <ol className="divide-y rounded-2xl border bg-card">

@@ -3,7 +3,9 @@ import type {
   Article,
   Favorite,
   Note,
+  Lookup,
   ProgressEntry,
+  StoredImage,
   Settings,
   Source,
   TargetType,
@@ -63,4 +65,11 @@ export interface Store {
 
   listProgress(weekId: string): Promise<ProgressEntry[]>;
   setProgress(entry: Omit<ProgressEntry, "updatedAt">): Promise<void>;
+
+  listLookups(weekId: string): Promise<Lookup[]>;
+  saveLookup(lookup: Omit<Lookup, "id" | "createdAt">): Promise<Lookup>;
+  deleteLookup(id: string): Promise<void>;
+
+  listImages(weekId: string, kind?: StoredImage["kind"]): Promise<StoredImage[]>;
+  replaceImages(weekId: string, kind: StoredImage["kind"], images: Array<Omit<StoredImage, "id" | "weekId" | "kind" | "createdAt">>): Promise<void>;
 }

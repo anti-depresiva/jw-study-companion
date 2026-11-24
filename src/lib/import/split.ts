@@ -85,26 +85,29 @@ export interface WeekSplit {
   weeks: FoundRange[];
   text: string | null;
   bibleReading: string | null;
+  /** PDF-Seiten (1-basiert) der gefundenen Woche */
+  pageNumbers: number[];
 }
 
 const same = (a: FoundRange, year: number, week: number) => a.year === year && a.week === week;
 
 /** PDF: seitenweise zerlegen. Seiten ohne Kopfzeile gehören zur vorherigen Woche. */
 export function splitWorkbookPages(pages: string[], year: number, week: number): WeekSplit {
-  const weeks: Array<{ range: FoundRange; pages: string[] }> = [];
+  const weeks: Array<{ range: FoundRange; pages: string[]; nums: number[] }> = [];
   let current: (typeof weeks)[number] | null = null;
-  for (const raw of pages) {
+  for (const [index, raw] of pages.entries()) {
     const page = normalizeImportText(raw);
     const lines = page.split("\n");
     const header = lines.map((l) => headerOf(l, year, week)).find(Boolean) ?? null;
     const startsWeek = /^1\. /m.test(page);
     if (header && startsWeek) {
-      current = { range: header, pages: [page] };
+      current = { range: header, pages: [page], nums: [index + 1] };
       if (!weeks.some((w) => same(w.range, header.year, header.week))) weeks.push(current);
     } else if (header) {
       current = null; // z. B. Rückseite mit Hinweis auf eine Woche – keine Wochenseite
     } else if (current) {
       current.pages.push(page);
+      current.nums.push(index + 1);
     }
   }
   const hit = weeks.find((w) => same(w.range, year, week));
@@ -112,6 +115,7 @@ export function splitWorkbookPages(pages: string[], year: number, week: number):
     weeks: weeks.map((w) => w.range),
     text: hit ? hit.pages.join("\n") : null,
     bibleReading: hit?.range.bibleReading ?? null,
+    pageNumbers: hit?.nums ?? [],
   };
 }
 
@@ -124,12 +128,13 @@ export function splitWorkbookWeeks(raw: string, year: number, week: number): Wee
     if (range && !starts.some((s) => same(s.range, range.year, range.week))) starts.push({ line: i, range });
   });
   const idx = starts.findIndex((s) => same(s.range, year, week));
-  if (idx < 0) return { weeks: starts.map((s) => s.range), text: null, bibleReading: null };
+  if (idx < 0) return { weeks: starts.map((s) => s.range), text: null, bibleReading: null, pageNumbers: [] };
   const end = starts[idx + 1]?.line ?? lines.length;
   return {
     weeks: starts.map((s) => s.range),
     text: lines.slice(starts[idx].line, end).join("\n"),
     bibleReading: starts[idx].range.bibleReading,
+    pageNumbers: [],
   };
 }
 

@@ -4,13 +4,15 @@
  */
 import { z } from "zod";
 import { generateAnswerSet, generateComments } from "@/lib/ai/answers";
-import { askAssistant, type ChatTurn } from "@/lib/ai/assistant";
-import { aiEnabled, configureAi } from "@/lib/ai/client";
+import { askAssistant, lookupReference as lookupReferenceAi, type ChatTurn } from "@/lib/ai/assistant";
+import { aiEnabled, configureAi, model } from "@/lib/ai/client";
+import { findReferences } from "@/lib/references";
 import { extractArticleWithAi, extractWorkbookWithAi } from "@/lib/ai/extract";
 import { store } from "@/lib/data";
 import { parseWatchtowerText, parseWorkbookText, type ParsedArticle, type ParsedWorkbook } from "@/lib/import/parse";
 import { extractPdfText } from "@/lib/import/pdf";
-import { contentHash, normalizeImportText } from "@/lib/import/text";
+import { extractPageImages, type PdfImage } from "@/lib/import/images";
+import { comparable, contentHash, normalizeImportText, verbatimRatio } from "@/lib/import/text";
 import { scriptureLabels } from "@/lib/scripture";
 import { checkOfficialUrl } from "@/lib/sources/domain";
 import { checkWeek, isPreparing, prepareWeekAnswers } from "@/lib/study/prepare";
@@ -187,6 +189,8 @@ export interface ImportPreview {
   notes: string[];
   /** Bei Wachtturm-Ausgaben mit mehreren Studienartikeln */
   articleChoices: Array<{ number: string; title: string; weekLabel: string | null }>;
+  /** Bilder aus den PDF-Seiten dieser Woche (noch nicht gespeichert) */
+  images: PdfImage[];
 }
 
 export async function previewImport(input: {
@@ -204,8 +208,10 @@ export async function previewImport(input: {
   let origin: "pdf" | "text";
   let pages: number | null = null;
   let pageTexts: string[] | null = null;
+  let doc: Awaited<ReturnType<typeof extractPdfText>>["doc"] | null = null;
   if (input.file) {
     const pdf = await extractPdfText(input.file);
+    doc = pdf.doc;
     raw = pdf.text;
     pages = pdf.pages;
     pageTexts = pdf.pageTexts;
@@ -228,6 +234,7 @@ export async function previewImport(input: {
   let part = text;
   let containsWeek = true;
   let weekBibleReading: string | null = null;
+  let weekPages: number[] = pageTexts ? pageTexts.map((_, i) => i + 1) : [];
   if (input.kind === "workbook") {
     const byPage = pageTexts && pageTexts.length > 1 ? splitWorkbookPages(pageTexts, week.year, week.week) : null;
     const split = byPage && byPage.weeks.length >= 2 ? byPage : splitWorkbookWeeks(text, week.year, week.week);
@@ -235,6 +242,7 @@ export async function previewImport(input: {
       if (split.text) {
         part = split.text;
         weekBibleReading = split.bibleReading;
+        if (split.pageNumbers.length) weekPages = split.pageNumbers;
         notes.push(`Die Datei enthält ${split.weeks.length} Wochen – übernommen wird ${label}. Die anderen Wochen kannst du dort mit derselben Datei importieren.`);
       } else {
         containsWeek = false;
@@ -254,9 +262,11 @@ export async function previewImport(input: {
         cands.find((c) => c.week?.year === week.year && c.week.week === week.week);
       if (chosen) {
         part = chosen.text;
+        if (pageTexts) weekPages = pagesOf(pageTexts, part);
         notes.push(`Die Ausgabe enthält ${cands.length} Studienartikel – übernommen wird Studienartikel ${chosen.number}.`);
       } else if (!aiReady) {
         part = cands[0].text;
+        if (pageTexts) weekPages = pagesOf(pageTexts, part);
         notes.push(`Die Ausgabe enthält ${cands.length} Studienartikel; die Studienwoche wurde nicht automatisch erkannt. Bitte oben den richtigen Artikel wählen.`);
       } else {
         containsWeek = false;
@@ -291,9 +301,28 @@ export async function previewImport(input: {
     throw new UserError("Es wurden ungewöhnlich viele Abschnitte erkannt – vermutlich enthält die Datei mehrere Wochen, deren Datumszeilen nicht gefunden wurden. Bitte nur den Text der gewünschten Woche einfügen.");
   }
 
+  // 3) Bilder der betreffenden Seiten (nur bei PDF, nur auf dem Gerät)
+  let images: PdfImage[] = [];
+  if (doc && weekPages.length && containsWeek) {
+    try {
+      images = await extractPageImages(doc, weekPages);
+      if (images.length) notes.push(`${images.length} Bild(er) aus der PDF gefunden – sie werden mitgespeichert.`);
+    } catch {
+      notes.push("Die Bilder konnten nicht aus der PDF gelesen werden; der Text wird trotzdem übernommen.");
+    }
+  }
+
   const hash = await contentHash(part);
   const duplicate = (await store.listSources(week.id)).some((s) => s.contentHash === hash);
-  return { method, origin, pages, chars: part.length, contentHash: hash, duplicate, parsed, notes, articleChoices };
+  return { method, origin, pages, chars: part.length, contentHash: hash, duplicate, parsed, notes, articleChoices, images };
+}
+
+/** PDF-Seiten, deren Text im gewählten Abschnitt vorkommt. */
+function pagesOf(pageTexts: string[], part: string): number[] {
+  return pageTexts.flatMap((p, i) => {
+    const sample = comparable(normalizeImportText(p)).split(" ").slice(0, 60).join(" ");
+    return sample.length > 80 && verbatimRatio(sample, part, 5) >= 0.5 ? [i + 1] : [];
+  });
 }
 
 const s = (max: number) => z.string().max(max);
@@ -339,6 +368,8 @@ export async function saveImport(input: {
   sourceUrl: string | null;
   overwrite: boolean;
   data: unknown;
+  /** Bilder aus der PDF (ersetzen die bisherigen Bilder dieser Woche) */
+  images?: PdfImage[];
 }) {
   const week = await store.getWeekById(input.weekId);
   if (!week) throw new UserError("Woche nicht gefunden.");
@@ -417,6 +448,35 @@ export async function saveImport(input: {
       })),
     });
   }
+  if (input.images) {
+    await store.replaceImages(week.id, input.kind, input.images.map(({ page, width, height, blob }) => ({ page, width, height, blob })));
+  }
   await store.updateWeek(week.id, { status: "importiert" });
+  notifyChange();
+}
+
+/* ── Verweise nachschlagen ───────────────────────────────────────── */
+
+export async function lookupReference(t: Target, referenceText: string) {
+  await withAi();
+  const target = await resolveTarget(store, t.weekId, t.targetType, t.targetId);
+  const ref = findReferences(`${target.originalText}\n${target.question}`).find((r) => r.text === referenceText);
+  if (!ref) throw new UserError("Dieser Verweis kommt im Abschnitt nicht vor.");
+  const result = await lookupReferenceAi(target, ref);
+  if (!result.found) return { saved: null, message: result.text };
+  const saved = await store.saveLookup({
+    ...t,
+    reference: ref.text,
+    text: result.text,
+    sources: result.sources,
+    warnings: result.warnings,
+    model: model(),
+  });
+  notifyChange();
+  return { saved, message: null };
+}
+
+export async function deleteLookup(id: string) {
+  await store.deleteLookup(id);
   notifyChange();
 }
