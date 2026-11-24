@@ -45,3 +45,6 @@ next-env.d.ts
 
 # Lokaler Test des statischen Exports
 /.pages-test
+
+# Eigene Test-PDFs (nicht hochladen)
+/testdateien
