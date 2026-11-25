@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Download, ExternalLink, ShieldCheck } from "lucide-react";
+import { ExternalLink, ShieldCheck } from "lucide-react";
 import { ImportWizard } from "@/components/import/import-wizard";
 import { LoadError, Loading } from "@/components/study/loading";
 import { Container, PageHeader } from "@/components/study/ui";
@@ -9,7 +9,7 @@ import { isAiReady } from "@/lib/actions";
 import { useData } from "@/lib/client/use-data";
 import { store } from "@/lib/data";
 import { checkOfficialUrl } from "@/lib/sources/domain";
-import { MAGAZINE_INDEX_URL, WORKBOOK_INDEX_URL } from "@/lib/sources/links";
+import { wolMeetingsUrl } from "@/lib/sources/links";
 import { useWeekParam } from "@/lib/study/load";
 import { formatRange } from "@/lib/week";
 
@@ -19,7 +19,7 @@ export default function ImportPage() {
   const sp = useSearchParams();
   const kind = sp.get("type") === "workbook" ? "workbook" : "watchtower";
   const m = sp.get("mode");
-  const mode = m === "text" || m === "manual" ? m : "pdf";
+  const mode = m === "manual" ? m : "text";
 
   const { data, error } = useData(async () => {
     const w = await store.ensureWeek(year, week);
@@ -35,7 +35,6 @@ export default function ImportPage() {
     return { weekId: w.id, hasExisting: Boolean(existing), suggestedUrls, ai };
   }, [year, week, kind]);
 
-  const downloadPage = kind === "watchtower" ? MAGAZINE_INDEX_URL : WORKBOOK_INDEX_URL;
 
   return (
     <Container>
@@ -45,7 +44,7 @@ export default function ImportPage() {
       >
         <p className="flex items-start gap-2 text-sm">
           <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" />
-          Die Datei wird nur auf deinem iPhone ausgelesen und gespeichert. Absätze und Fragen werden wörtlich übernommen und gegen deine Vorlage geprüft.
+          Der Text wird nur auf deinem iPhone gespeichert. Absätze und Fragen werden wörtlich übernommen und gegen deine Vorlage geprüft.
         </p>
       </PageHeader>
 
@@ -53,15 +52,15 @@ export default function ImportPage() {
         <li className="flex items-start gap-2">
           <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand text-[0.7rem] font-semibold text-primary-foreground">1</span>
           <span>
-            {kind === "watchtower" ? "Wachtturm-Studienausgabe" : "Arbeitsheft"} auf jw.org öffnen und als <strong>PDF herunterladen</strong> (in Safari: Datei wird unter „Downloads“ gespeichert).
-            <a href={downloadPage} target="_blank" rel="noopener noreferrer" className="mt-1.5 flex w-fit items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 font-medium text-secondary-foreground">
-              <Download className="size-4" /> Auf jw.org herunterladen <ExternalLink className="size-3.5" />
+            {kind === "watchtower" ? "Den Wachtturm-Studienartikel der Woche" : "Die Woche"} in der Online-Bibliothek öffnen, lange auf den Text tippen → <strong>„Alles auswählen“ → „Kopieren“</strong>.
+            <a href={wolMeetingsUrl(year, week)} target="_blank" rel="noopener noreferrer" className="mt-1.5 flex w-fit items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 font-medium text-secondary-foreground">
+              Online-Bibliothek öffnen <ExternalLink className="size-3.5" />
             </a>
           </span>
         </li>
         <li className="flex items-start gap-2">
           <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand text-[0.7rem] font-semibold text-primary-foreground">2</span>
-          <span>Unten „PDF hochladen“ wählen und die Datei aus „Downloads“ auswählen. Eine Ausgabe enthält mehrere Wochen.</span>
+          <span>Zurück in der App unten „Aus Zwischenablage einfügen“ und „Analysieren“ tippen.</span>
         </li>
       </ol>
 

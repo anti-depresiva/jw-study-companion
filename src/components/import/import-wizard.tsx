@@ -3,7 +3,7 @@
 import { friendlyError } from "@/lib/ai/client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { AlertTriangle, ClipboardPaste, FileUp, Loader2, PenLine, Plus, Save, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, ClipboardPaste, Loader2, PenLine, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,14 +11,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import * as actions from "@/lib/actions";
 import { weekHref } from "@/lib/routes";
-import type { PdfImage } from "@/lib/import/images";
-import { ImageThumb } from "@/components/study/week-images";
 import type { WorkbookSection } from "@/lib/types";
 import { SECTION_TITLES } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Kind = "watchtower" | "workbook";
-type Mode = "pdf" | "text" | "manual";
+type Mode = "text" | "manual";
 
 interface ArticleDraft {
   title: string;
@@ -94,12 +92,11 @@ function toWorkbookDraft(p: any): WorkbookDraft {
 export function ImportWizard(props: Props) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(props.initialMode);
-  const [file, setFile] = useState<File | null>(null);
   const [text, setText] = useState("");
   const [useAi, setUseAi] = useState<"auto" | "on" | "off">("auto");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [preview, setPreview] = useState<null | { method: string; origin: "pdf" | "text"; contentHash: string; duplicate: boolean; warnings: string[]; notes: string[]; chars: number }>(
+  const [preview, setPreview] = useState<null | { method: string; origin: "text"; contentHash: string; duplicate: boolean; warnings: string[]; notes: string[]; chars: number }>(
     null,
   );
   const [article, setArticle] = useState<ArticleDraft | null>(props.initialMode === "manual" && props.kind === "watchtower" ? emptyArticle() : null);
@@ -108,8 +105,6 @@ export function ImportWizard(props: Props) {
   const [overwrite, setOverwrite] = useState(false);
   const [choices, setChoices] = useState<Array<{ number: string; title: string; weekLabel: string | null }>>([]);
   const [chosen, setChosen] = useState("");
-  const [images, setImages] = useState<PdfImage[]>([]);
-  const [keepImages, setKeepImages] = useState(true);
 
   const isWt = props.kind === "watchtower";
   const draftReady = isWt ? article !== null : workbook !== null;
@@ -127,19 +122,16 @@ export function ImportWizard(props: Props) {
   }
 
   async function analyze(articleNumber?: string) {
-    if (mode === "pdf" && !file) return toast.error("Bitte eine PDF-Datei auswählen.");
     setLoading(true);
     try {
       const res: any = await actions.previewImport({
         kind: props.kind,
         weekId: props.weekId,
         ai: useAi,
-        file: mode === "pdf" ? file : null,
-        text: mode === "pdf" ? undefined : text,
+        text,
         article: articleNumber,
       });
       setChoices(res.articleChoices ?? []);
-      setImages(res.images ?? []);
       setPreview({
         method: res.method,
         origin: res.origin,
@@ -177,7 +169,6 @@ export function ImportWizard(props: Props) {
         sourceUrl: sourceUrl.trim() || null,
         overwrite,
         data,
-        images: preview?.origin === "pdf" && keepImages ? images : undefined,
       });
       toast.success("Import gespeichert.");
       router.push(weekHref(isWt ? "/wachtturm" : "/arbeitsheft", props.year, props.week));
@@ -192,10 +183,9 @@ export function ImportWizard(props: Props) {
   return (
     <div className="space-y-6">
       {/* Schritt 1: Art der Eingabe */}
-      <div className="grid grid-cols-3 gap-2" role="tablist" aria-label="Importart">
+      <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="Importart">
         {(
           [
-            ["pdf", FileUp, "PDF hochladen"],
             ["text", ClipboardPaste, "Text einfügen"],
             ["manual", PenLine, "Manuell eingeben"],
           ] as const
@@ -217,24 +207,7 @@ export function ImportWizard(props: Props) {
 
       {mode !== "manual" && !draftReady && (
         <div className="space-y-4 rounded-2xl border bg-card p-5">
-          {mode === "pdf" ? (
-            <div>
-              <Label htmlFor="pdf" className="mb-2 block font-semibold">
-                PDF-Datei von jw.org
-              </Label>
-              <input
-                id="pdf"
-                type="file"
-                accept="application/pdf,.pdf"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-secondary file:px-3 file:py-2 file:font-medium file:text-secondary-foreground"
-              />
-              <p className="mt-2 text-xs text-muted-foreground">
-                Max. 20 MB. Die Datei wird nur ausgelesen und nicht gespeichert. Auch ganze Ausgaben sind möglich – die KI sucht die passende Woche.
-              </p>
-            </div>
-          ) : (
-            <div>
+          <div>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <Label htmlFor="text" className="font-semibold">
                   Text aus der Veröffentlichung
@@ -271,8 +244,7 @@ export function ImportWizard(props: Props) {
                     : "Wochenprogramm einfügen (Schätze aus Gottes Wort, Uns im Dienst verbessern, Unser Leben als Christ) …"
                 }
               />
-            </div>
-          )}
+          </div>
           <div className="flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Erkennung:</span>
@@ -340,21 +312,6 @@ export function ImportWizard(props: Props) {
 
           {isWt && article && <ArticleEditor draft={article} onChange={setArticle} />}
           {!isWt && workbook && <WorkbookEditor draft={workbook} onChange={setWorkbook} />}
-
-          {images.length > 0 && (
-            <div className="rounded-2xl border bg-card p-5">
-              <label className="mb-3 flex items-center gap-2 font-semibold">
-                <input type="checkbox" checked={keepImages} onChange={(e) => setKeepImages(e.target.checked)} className="size-4" />
-                {images.length} Bild(er) aus der PDF mitspeichern
-              </label>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {images.map((img, i) => (
-                  <ImageThumb key={i} blob={img.blob} alt={`Bild ${i + 1} (Seite ${img.page})`} />
-                ))}
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">Die Bilder bleiben nur auf diesem Gerät gespeichert.</p>
-            </div>
-          )}
 
           <div className="rounded-2xl border bg-card p-5">
             <Label htmlFor="src" className="mb-2 block font-semibold">

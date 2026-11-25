@@ -12,7 +12,6 @@ Private Web-App (PWA) für die persönliche Vorbereitung auf die wöchentlichen 
 |---|---|
 | Wochen, importierte Texte, KI-Antworten, Notizen, Favoriten, Fortschritt, Einstellungen | **Nur auf dem iPhone** (Browser-Datenbank IndexedDB) |
 | Anthropic-API-Schlüssel | Nur auf dem iPhone; nicht in der Sicherung |
-| Importierte PDFs | Werden auf dem iPhone ausgelesen, nicht gespeichert, nirgendwohin gesendet |
 | Programmcode | GitHub Pages (enthält **keine** Daten, keinen Schlüssel, keine jw.org-Inhalte) |
 | KI-Anfragen | Der jeweilige Absatz geht direkt vom iPhone an Anthropic (Claude). Es gibt keinen eigenen Server. |
 
@@ -25,12 +24,12 @@ Es gibt keinen Server, keine Datenbank in der Cloud, kein Konto und keine Anmeld
 - **Startseite:** Kalenderwoche (ISO, Europe/Vienna), nächste Zusammenkunft, Begrüßung, „Deine Vorbereitung für diese Woche“ mit Fortschritt, **JETZT DIESE WOCHE VORBEREITEN**, frühere Wochen, Favoriten.
 - **Zusammenkünfte / Arbeitsheft / Wachtturm:** Wochenumschalter, Bereiche A–D, Publikationsansicht mit Absätzen und Originalfragen.
 - **Absatzansicht:** Originalfrage, Originaltext, **drei Antwortvarianten** (kurz · ausführlich · persönlich), zusätzlicher Gedanke, Bibelstellen, **Offizielle Quellen**; kopieren, Favorit, Notiz, weitere Antwort, **WEITERE KOMMENTARE GENERIEREN**, als vorbereitet markieren, Studienassistent, vorheriger/nächster Absatz.
-- **Import:** PDF (aus „Downloads“), Text einfügen oder manuelle Eingabe → bearbeitbare Vorschau. Ganze Ausgaben (mehrere Wochen) werden mit KI erkannt; die App sucht die passende Woche.
+- **Woche laden:** per Knopfdruck von wol.jw.org (siehe unten); als Ausweichweg Text einfügen oder manuelle Eingabe → bearbeitbare Vorschau.
 - **Archiv, Quellen, Einstellungen** (API-Schlüssel, Modell, Bibelübersetzung, Hell/Dunkel, Schriftgröße, Standard-Antwort, Kommentarlänge, Wochentage, automatische Wochenprüfung beim Öffnen, jw.org-Suche, Benachrichtigungen, Sicherung).
 
 ## Woche laden und Antwortfelder
 
-- **„Woche von wol.jw.org laden“** (Zusammenkünfte-Seite): Claude ruft per Knopfdruck die Seite der Woche in der Online-Bibliothek ab (Anthropic-Server, nur jw.org erlaubt) sowie den dort verlinkten Wachtturm-Studienartikel. Übernommen wird der **Originaltext** der Seiten, nicht Claudes Formulierung. Benötigt den API-Schlüssel; kostet pro Woche wenige Cent. Ob jw.org den Abruf zulässt, entscheidet die Seite selbst – sonst „Text einfügen“ (mit Knopf „Aus Zwischenablage einfügen“) oder PDF.
+- **„Woche von wol.jw.org laden“** (Zusammenkünfte-Seite): Claude ruft per Knopfdruck die Seite der Woche in der Online-Bibliothek ab (Anthropic-Server, nur jw.org erlaubt) sowie den dort verlinkten Wachtturm-Studienartikel. Übernommen wird der **Originaltext** der Seiten, nicht Claudes Formulierung. Benötigt den API-Schlüssel; kostet pro Woche wenige Cent. Ob jw.org den Abruf zulässt, entscheidet die Seite selbst – sonst „Text einfügen“ (mit Knopf „Aus Zwischenablage einfügen“).
 - **Wochenseite im Aufbau der Online-Bibliothek**: Programmpunkte mit Dauer, blau verlinkte Bibelstellen und Verweise, unter jeder Frage ein **graues Antwortfeld**. „Alle Felder ausfüllen“ schreibt kurze KI-Antworten hinein; die Felder sind frei bearbeitbar, selbst geschriebene Antworten werden nie überschrieben.
 
 ## Quellenregeln (technisch umgesetzt)
@@ -41,7 +40,7 @@ Es gibt keinen Server, keine Datenbank in der Cloud, kein Konto und keine Anmeld
 - **Keine Antwort ohne Quelle:** Ohne Originaltext und Quelle erscheint *„Dazu konnte keine passende offizielle Quelle auf jw.org gefunden werden.“*
 - **Wörtlichkeitsprüfung beim KI-Import:** Nicht wörtlich in der Vorlage stehende Absätze werden verworfen.
 - **Kennzeichnung:** ORIGINALTEXT · KI-ANTWORT · ZUSÄTZLICHER GEDANKE · BIBELSTELLE · OFFIZIELLE QUELLE; Importe als „benutzerseitig importiert“.
-- **Kein automatisches Abrufen von jw.org:** Du lädst die Veröffentlichungen selbst herunter und wählst die PDF in der App aus.
+- **Kein automatisches Abrufen von jw.org:** Seiten werden nur abgerufen, wenn du „Woche von wol.jw.org laden“ tippst.
 
 ## Auf GitHub Pages veröffentlichen (einmalig)
 
@@ -84,7 +83,7 @@ src/components/       Oberfläche (Studienansicht, Import-Assistent, Navigation,
 src/lib/actions.ts    Alle Aktionen (laufen im Browser)
 src/lib/data/         Speicher auf dem Gerät (IndexedDB) + Sicherung
 src/lib/ai/           Claude: Antworten, Kommentare, Assistent, Import-Erkennung, jw.org-Suche, Quellenbindung
-src/lib/import/       PDF-Auslesen (auf dem Gerät), Parser, Wörtlichkeitsprüfung
+src/lib/import/       Parser, Wörtlichkeitsprüfung
 src/lib/sources/      jw.org-Domainfilter, offizielle Links
 src/lib/week.ts       ISO-Kalenderwochen, Europe/Vienna
 public/sw.js          Offline-Unterstützung

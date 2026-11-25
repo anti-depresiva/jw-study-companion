@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from "@/lib/types";
-import type { AnswerField, AnswerSet, Article, Favorite, Lookup, Note, ProgressEntry, Settings, Source, StoredImage, Week, Workbook } from "@/lib/types";
+import type { AnswerField, AnswerSet, Article, Favorite, Lookup, Note, ProgressEntry, Settings, Source, Week, Workbook } from "@/lib/types";
 import { weekRange } from "@/lib/week";
 import type { NewArticle, NewSource, NewWorkbook, Store } from "./store";
 
@@ -41,15 +41,16 @@ const emptyDb = (): Db => ({
 const DB_NAME = "jw-plus-study";
 const STORE = "kv";
 const KEY = "db";
-const IMAGES = "images"; // Bilder getrennt, damit der Datenbestand klein bleibt
+const OLD_IMAGES = "images"; // früher: Bilder aus PDF-Importen
 
 function openIdb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 2);
+    const req = indexedDB.open(DB_NAME, 3);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
-      if (!db.objectStoreNames.contains(IMAGES)) db.createObjectStore(IMAGES, { keyPath: "id" });
+      // PDF-Import gibt es nicht mehr – gespeicherte Bilder entfernen, Speicher freigeben
+      if (db.objectStoreNames.contains(OLD_IMAGES)) db.deleteObjectStore(OLD_IMAGES);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error("Speicher nicht verfügbar."));
@@ -380,23 +381,4 @@ export class BrowserStore implements Store {
     });
   }
 
-  async listImages(weekId: string, kind?: StoredImage["kind"]) {
-    const all = await tx<StoredImage[]>("readonly", (s) => s.getAll() as IDBRequest<StoredImage[]>, IMAGES);
-    return all.filter((i) => i.weekId === weekId && (!kind || i.kind === kind)).sort((a, b) => a.page - b.page);
-  }
-  async replaceImages(weekId: string, kind: StoredImage["kind"], images: Array<Omit<StoredImage, "id" | "weekId" | "kind" | "createdAt">>) {
-    const old = await this.listImages(weekId, kind);
-    idb ??= openIdb();
-    const db = await idb;
-    await new Promise<void>((resolve, reject) => {
-      const t = db.transaction(IMAGES, "readwrite");
-      const s = t.objectStore(IMAGES);
-      for (const o of old) s.delete(o.id);
-      const createdAt = now();
-      for (const img of images) s.put({ ...img, id: crypto.randomUUID(), weekId, kind, createdAt } satisfies StoredImage);
-      t.oncomplete = () => resolve();
-      t.onerror = () => reject(t.error ?? new Error("Bilder konnten nicht gespeichert werden."));
-      t.onabort = () => reject(t.error ?? new Error("Speichern der Bilder abgebrochen (Speicher voll?)."));
-    });
-  }
 }

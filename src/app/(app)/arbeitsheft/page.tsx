@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { BookOpenText, CheckCircle2, ChevronRight, Circle, ExternalLink, Upload } from "lucide-react";
 import { LoadError, Loading } from "@/components/study/loading";
-import { WeekImages } from "@/components/study/week-images";
 import { Container, EmptyState, PageHeader, ProgressBar, SectionBand, WeekSwitcher, sectionLetter } from "@/components/study/ui";
 import { ButtonLink, ExternalButtonLink } from "@/components/ui/button-link";
 import { useData } from "@/lib/client/use-data";
@@ -36,7 +35,7 @@ function Workbook({ data, year, week }: { data: Awaited<ReturnType<typeof loadWe
   if (!workbook) {
     return (
       <EmptyState icon={BookOpenText} title="Für diese Woche ist noch kein Arbeitsheft importiert">
-        <p>Lade das Arbeitsheft „Unser Leben und Dienst als Christ“ in der jw.org-App oder auf jw.org als PDF herunter und importiere es. Eine Ausgabe enthält zwei Monate.</p>
+        <p>Lade die Woche auf der Seite „Zusammenkünfte“ mit „Woche von wol.jw.org laden“ – oder füge den Text der Woche aus der Online-Bibliothek ein.</p>
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           <ButtonLink href={importHref(year, week, "workbook")}>
             <Upload /> Arbeitsheft importieren
@@ -74,8 +73,6 @@ function Workbook({ data, year, week }: { data: Awaited<ReturnType<typeof loadWe
           </a>
         )}
       </div>
-
-      {data.week && <WeekImages weekId={data.week.id} kind="workbook" className="mb-6" />}
 
       <div className="space-y-6">
         {ORDER.map((section) => {

@@ -31,7 +31,7 @@ const SECTION_BAR: Record<WorkbookSection, string> = {
 };
 
 /**
- * PDF-Text bricht nach Spaltenbreite um – Zeilen zu Absätzen zusammenführen.
+ * Kopierter Text bricht oft mitten im Satz um – Zeilen zu Absätzen zusammenführen.
  * Ein neuer Absatz beginnt nach Satzende oder bei Aufzählungen („˙ Wie …“, „VON HAUS ZU HAUS.“).
  */
 function toParagraphs(text: string): string[] {

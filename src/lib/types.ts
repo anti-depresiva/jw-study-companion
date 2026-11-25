@@ -65,7 +65,7 @@ export type Verification =
   | "verified_link" // Linkprüfung erfolgreich (HTTP 200 auf jw.org)
   | "verified_search" // von der jw.org-beschränkten Suche gefunden
   | "user_confirmed" // vom Benutzer bestätigt
-  | "user_import" // Inhalt vom Benutzer importiert (PDF/Text)
+  | "user_import" // Inhalt vom Benutzer importiert (Text/manuell)
   | "rejected";
 export type SourceOrigin = "pattern" | "search" | "manual" | "pdf" | "text" | "wol";
 
@@ -228,18 +228,6 @@ export interface Lookup {
   sources: Array<{ title: string; url: string }>;
   warnings: string[];
   model: string;
-  createdAt: string;
-}
-
-/** Bild aus einer importierten PDF – nur auf dem Gerät gespeichert. */
-export interface StoredImage {
-  id: string;
-  weekId: string;
-  kind: "workbook" | "watchtower";
-  page: number;
-  width: number;
-  height: number;
-  blob: Blob;
   createdAt: string;
 }
 

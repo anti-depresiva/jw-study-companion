@@ -93,7 +93,7 @@ export function PrepareButton({ year, week, label = "Jetzt diese Woche vorbereit
             Woche angelegt und offizielle Quellen vermerkt.
           </p>
           <p className="mt-1.5 text-muted-foreground">
-            Lade die Veröffentlichung in der jw.org-App oder auf jw.org als PDF herunter und importiere sie hier. Eine Ausgabe enthält mehrere Wochen.
+            Lade die Woche auf der Seite „Zusammenkünfte“ mit „Woche von wol.jw.org laden“ – oder füge den Text aus der Online-Bibliothek ein.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <ButtonLink size="sm" variant="outline" href={importHref(year, week, "workbook")}>

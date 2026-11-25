@@ -1,12 +1,11 @@
 "use client";
 
-import { ClipboardPaste, FileUp } from "lucide-react";
+import { ClipboardPaste } from "lucide-react";
 import { LoadError, Loading } from "@/components/study/loading";
 import { MeetingSheet, MeetingToolbar } from "@/components/study/meeting-sheet";
 import { PrepareButton } from "@/components/study/prepare-button";
 import { SourcesPanel } from "@/components/study/sources-panel";
 import { StatusDot } from "@/components/study/status-dot";
-import { WeekImages } from "@/components/study/week-images";
 import { Container, PageHeader, ProgressBar, WeekSwitcher } from "@/components/study/ui";
 import { ButtonLink } from "@/components/ui/button-link";
 import { isAiReady } from "@/lib/actions";
@@ -40,13 +39,6 @@ export default function MeetingWeekPage() {
 
           <MeetingToolbar year={year} week={week} data={data} aiEnabled={data.ai} />
 
-          {data.week && (
-            <>
-              <WeekImages weekId={data.week.id} kind="workbook" className="mb-4" />
-              <WeekImages weekId={data.week.id} kind="watchtower" className="mb-4" />
-            </>
-          )}
-
           {data.week ? (
             <MeetingSheet data={data} year={year} week={week} />
           ) : (
@@ -56,12 +48,9 @@ export default function MeetingWeekPage() {
           )}
 
           <div className="mt-3 flex flex-wrap justify-end gap-2 text-sm">
-            <span className="mr-auto self-center text-xs text-muted-foreground">Andere Wege:</span>
+            <span className="mr-auto self-center text-xs text-muted-foreground">Falls das Laden nicht klappt:</span>
             <ButtonLink size="sm" variant="ghost" href={importHref(year, week, "workbook", "text")}>
               <ClipboardPaste /> Text einfügen
-            </ButtonLink>
-            <ButtonLink size="sm" variant="ghost" href={importHref(year, week, "workbook", "pdf")}>
-              <FileUp /> PDF
             </ButtonLink>
           </div>
 

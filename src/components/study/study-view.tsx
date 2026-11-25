@@ -37,7 +37,6 @@ import { COMMENT_KIND_LABELS } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ContentLabel } from "./labels";
 import { OfficialSources } from "./source-block";
-import { WeekImages } from "./week-images";
 
 export interface StudyViewProps {
   targetType: TargetType;
@@ -172,8 +171,6 @@ export function StudyView(props: StudyViewProps) {
         )}
       </Collapsible>
 
-      <WeekImages weekId={props.weekId} kind={props.targetType === "paragraph" ? "watchtower" : "workbook"} className="mb-6" />
-
       {/* KI-Antworten */}
       {!answer ? (
         <section className="mb-6 rounded-2xl border border-dashed bg-surface p-5 text-center">
@@ -242,9 +239,6 @@ export function StudyView(props: StudyViewProps) {
           </p>
           {error.noSource && (
             <div className="mt-3 flex flex-wrap gap-2">
-              <ButtonLink size="sm" variant="outline" href={`${props.importHref}&mode=pdf`}>
-                PDF hochladen
-              </ButtonLink>
               <ButtonLink size="sm" variant="outline" href={`${props.importHref}&mode=text`}>
                 Quelle einfügen
               </ButtonLink>
