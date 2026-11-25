@@ -25,8 +25,8 @@ export default function WorkbookItemPage() {
     const prev = items[index - 1];
     const next = items[index + 1];
     return buildStudyViewProps(target, wd, favorites, ai, {
-      backHref: weekHref("/arbeitsheft", year, week),
-      backLabel: "Arbeitsheft",
+      backHref: weekHref(year, week, `punkt-${id}`),
+      backLabel: "Zur Woche",
       position: `${index + 1} / ${items.length}`,
       prev: prev ? { href: itemHref(year, week, prev.id), label: `${prev.position}. ${prev.title}` } : null,
       next: next ? { href: itemHref(year, week, next.id), label: `${next.position}. ${next.title}` } : null,

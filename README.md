@@ -21,11 +21,10 @@ Es gibt keinen Server, keine Datenbank in der Cloud, kein Konto und keine Anmeld
 
 ## Funktionen
 
-- **Startseite:** Kalenderwoche (ISO, Europe/Vienna), nächste Zusammenkunft, Begrüßung, „Deine Vorbereitung für diese Woche“ mit Fortschritt, **JETZT DIESE WOCHE VORBEREITEN**, frühere Wochen, Favoriten.
-- **Zusammenkünfte / Arbeitsheft / Wachtturm:** Wochenumschalter, Bereiche A–D, Publikationsansicht mit Absätzen und Originalfragen.
+- **Diese Woche (Startseite):** Wochenumschalter, Woche laden, Arbeitsheft und Wachtturm-Studium auf einer Seite mit Antwortfeldern.
 - **Absatzansicht:** Originalfrage, Originaltext, **drei Antwortvarianten** (kurz · ausführlich · persönlich), zusätzlicher Gedanke, Bibelstellen, **Offizielle Quellen**; kopieren, Favorit, Notiz, weitere Antwort, **WEITERE KOMMENTARE GENERIEREN**, als vorbereitet markieren, Studienassistent, vorheriger/nächster Absatz.
 - **Woche laden:** per Knopfdruck von wol.jw.org (siehe unten); als Ausweichweg Text einfügen oder manuelle Eingabe → bearbeitbare Vorschau.
-- **Archiv, Quellen, Einstellungen** (API-Schlüssel, Modell, Bibelübersetzung, Hell/Dunkel, Schriftgröße, Standard-Antwort, Kommentarlänge, Wochentage, automatische Wochenprüfung beim Öffnen, jw.org-Suche, Benachrichtigungen, Sicherung).
+- **Favoriten, Archiv, Einstellungen** (API-Schlüssel, Modell, Bibelübersetzung, Hell/Dunkel, Schriftgröße, Standard-Antwort, Kommentarlänge, Wochentage, automatische Wochenprüfung beim Öffnen, jw.org-Suche, Benachrichtigungen, Sicherung).
 
 ## Woche laden und Antwortfelder
 
@@ -78,7 +77,7 @@ Abrechnung direkt über dein Anthropic-Konto. Grobe Schätzung (nicht gemessen):
 ## Projektstruktur
 
 ```
-src/app/(app)/        Seiten (Start, Zusammenkünfte, Arbeitsheft, Wachtturm, Absatz, Import, Favoriten, Archiv, Quellen, Einstellungen)
+src/app/(app)/        Seiten (Woche, Programmpunkt, Absatz, Import, Favoriten, Archiv, Einstellungen)
 src/components/       Oberfläche (Studienansicht, Import-Assistent, Navigation, Branding, shadcn/ui)
 src/lib/actions.ts    Alle Aktionen (laufen im Browser)
 src/lib/data/         Speicher auf dem Gerät (IndexedDB) + Sicherung

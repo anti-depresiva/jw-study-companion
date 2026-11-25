@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Archive, ChevronRight, ShieldCheck } from "lucide-react";
+import { Archive, ChevronRight } from "lucide-react";
 import { LoadError, Loading } from "@/components/study/loading";
 import { StatusDot } from "@/components/study/status-dot";
 import { Container, EmptyState, PageHeader, ProgressBar } from "@/components/study/ui";
@@ -37,9 +37,6 @@ export default function ArchivePage() {
       <PageHeader eyebrow="Persönliche Studienbibliothek" title="Wochenarchiv">
         Alle vorbereiteten Wochen mit Antworten, Notizen und Quellen – gespeichert auf diesem Gerät.
       </PageHeader>
-      <Link href="/quellen/" className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-brand-mid hover:underline">
-        <ShieldCheck className="size-4" /> Alle Quellen anzeigen
-      </Link>
       {error ? (
         <LoadError error={error} />
       ) : !rows ? (
@@ -55,7 +52,7 @@ export default function ArchivePage() {
             <ul className="divide-y rounded-2xl border bg-card">
               {list.map(({ w, article, workbook, notes, answers, summary }) => (
                 <li key={w.id}>
-                  <Link href={weekHref("/zusammenkuenfte", w.year, w.week)} className="group flex items-center gap-4 px-4 py-4 hover:bg-muted/40 sm:px-5">
+                  <Link href={weekHref(w.year, w.week)} className="group flex items-center gap-4 px-4 py-4 hover:bg-muted/40 sm:px-5">
                     <span className="flex size-12 shrink-0 flex-col items-center justify-center rounded-xl bg-secondary text-secondary-foreground">
                       <span className="text-[0.6rem] font-semibold uppercase">KW</span>
                       <span className="text-lg leading-none font-semibold tabular-nums">{w.week}</span>

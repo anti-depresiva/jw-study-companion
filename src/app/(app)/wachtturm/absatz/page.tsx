@@ -29,7 +29,7 @@ export default function ParagraphPage() {
     const prev = article.paragraphs[index - 1];
     const next = article.paragraphs[index + 1];
     return buildStudyViewProps(target, wd, favorites, ai, {
-      backHref: weekHref("/wachtturm", year, week),
+      backHref: weekHref(year, week, `absatz-${n}`),
       backLabel: "Studienartikel",
       position: `${index + 1} / ${article.paragraphs.length}`,
       prev: prev ? { href: paragraphHref(year, week, index), label: `Absatz ${prev.number}` } : null,

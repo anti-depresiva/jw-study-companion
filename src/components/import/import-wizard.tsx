@@ -171,7 +171,7 @@ export function ImportWizard(props: Props) {
         data,
       });
       toast.success("Import gespeichert.");
-      router.push(weekHref(isWt ? "/wachtturm" : "/arbeitsheft", props.year, props.week));
+      router.push(weekHref(props.year, props.week));
     } catch (err) {
       toast.error(friendlyError(err));
       if (err instanceof actions.DuplicateImportError) setOverwrite(false);

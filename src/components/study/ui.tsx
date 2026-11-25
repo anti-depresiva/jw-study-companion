@@ -1,4 +1,4 @@
-import { weekHref, type WeekBase } from "@/lib/routes";
+import { weekHref } from "@/lib/routes";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -35,14 +35,14 @@ export function Container({ children, className, wide }: { children: React.React
 }
 
 /** Wochenumschalter wie in einer Bibliotheks-App: ‹ KW 48 · 23.–29. November 2026 › */
-export function WeekSwitcher({ base, year, week }: { base: WeekBase; year: number; week: number }) {
+export function WeekSwitcher({ year, week }: { year: number; week: number }) {
   const prev = shiftWeek(year, week, -1);
   const next = shiftWeek(year, week, 1);
   const r = weekRange(year, week);
   return (
     <div className="mb-6 flex items-center justify-between gap-2 rounded-xl border bg-surface px-1.5 py-1.5">
       <Link
-        href={weekHref(base, prev.year, prev.week)}
+        href={weekHref(prev.year, prev.week)}
         className="flex size-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
         aria-label="Vorherige Woche"
       >
@@ -53,7 +53,7 @@ export function WeekSwitcher({ base, year, week }: { base: WeekBase; year: numbe
         <div className="text-xs text-muted-foreground">{formatRange(r.start, r.end)}</div>
       </div>
       <Link
-        href={weekHref(base, next.year, next.week)}
+        href={weekHref(next.year, next.week)}
         className="flex size-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
         aria-label="Nächste Woche"
       >

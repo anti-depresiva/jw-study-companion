@@ -1,4 +1,4 @@
-import { Archive, BookMarked, BookOpenText, CalendarDays, Home, Settings, Star, type LucideIcon } from "lucide-react";
+import { Archive, CalendarDays, Settings, Star, type LucideIcon } from "lucide-react";
 
 export interface NavItem {
   href: string;
@@ -10,12 +10,9 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Startseite", short: "Start", icon: Home, match: ["/"] },
-  { href: "/zusammenkuenfte", label: "Zusammenkünfte", short: "Woche", icon: CalendarDays, match: ["/zusammenkuenfte", "/import"] },
-  { href: "/arbeitsheft", label: "Arbeitsheft", short: "Arbeitsheft", icon: BookOpenText, match: ["/arbeitsheft"] },
-  { href: "/wachtturm", label: "Wachtturm", short: "Wachtturm", icon: BookMarked, match: ["/wachtturm"] },
+  { href: "/", label: "Diese Woche", short: "Woche", icon: CalendarDays, match: ["/", "/import", "/arbeitsheft", "/wachtturm"] },
   { href: "/favoriten", label: "Favoriten", short: "Favoriten", icon: Star, match: ["/favoriten"] },
-  { href: "/archiv", label: "Wochenarchiv", short: "Archiv", icon: Archive, match: ["/archiv", "/quellen"] },
+  { href: "/archiv", label: "Wochenarchiv", short: "Archiv", icon: Archive, match: ["/archiv"] },
   { href: "/einstellungen", label: "Einstellungen", short: "Einstellungen", icon: Settings, match: ["/einstellungen"] },
 ];
 

@@ -132,7 +132,7 @@ function ItemBlock({ item, data, year, week, color }: { item: WorkbookItem; data
   };
 
   return (
-    <article className="py-4">
+    <article id={`punkt-${item.id}`} className="scroll-mt-4 py-4">
       <h3 className={cn("text-[1.05rem] font-semibold", color)}>
         <Link href={itemHref(year, week, item.id)} className="group inline-flex items-start gap-1.5 hover:underline">
           {item.position}. {item.title}
@@ -167,6 +167,15 @@ function ItemBlock({ item, data, year, week, color }: { item: WorkbookItem; data
 export function MeetingSheet({ data, year, week }: { data: WeekData; year: number; week: number }) {
   const r = weekRange(year, week);
   const { workbook, article } = data;
+
+  if (!data.week) {
+    return (
+      <div className="rounded-2xl border border-dashed bg-surface p-8 text-center text-sm text-muted-foreground">
+        <PencilLine className="mx-auto mb-2 size-6" />
+        Für diese Woche sind noch keine Inhalte vorhanden. Lade sie oben von wol.jw.org.
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border bg-card px-4 pb-4 sm:px-6">
@@ -217,7 +226,7 @@ export function MeetingSheet({ data, year, week }: { data: WeekData; year: numbe
               const f = fieldOf(data.fields, "paragraph", p.id, 0);
               const target = { weekId: data.week!.id, targetType: "paragraph" as const, targetId: p.id };
               return (
-                <div key={p.id} className="py-4">
+                <div key={p.id} id={`absatz-${i + 1}`} className="scroll-mt-4 py-4">
                   {p.question && (
                     <>
                       <p className="font-semibold">

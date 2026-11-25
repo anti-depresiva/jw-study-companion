@@ -1,8 +1,7 @@
 /** Zentrale Pfade (statische App: Woche/Absatz stehen in Query-Parametern). */
 
-export type WeekBase = "/zusammenkuenfte" | "/arbeitsheft" | "/wachtturm";
-
-export const weekHref = (base: WeekBase, year: number, week: number) => `${base}/?y=${year}&w=${week}`;
+/** Wochenseite (Startseite) – mit Anker springt sie zum Programmpunkt bzw. Absatz. */
+export const weekHref = (year: number, week: number, anchor?: string) => `/?y=${year}&w=${week}${anchor ? `#${anchor}` : ""}`;
 export const paragraphHref = (year: number, week: number, n: number) => `/wachtturm/absatz/?y=${year}&w=${week}&n=${n}`;
 export const itemHref = (year: number, week: number, id: string) => `/arbeitsheft/punkt/?y=${year}&w=${week}&id=${encodeURIComponent(id)}`;
 export const importHref = (year: number, week: number, type: "watchtower" | "workbook", mode?: "text" | "manual") =>
