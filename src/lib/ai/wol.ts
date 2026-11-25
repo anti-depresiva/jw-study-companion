@@ -87,6 +87,34 @@ export function cleanFetchedText(md: string): string {
     .replace(/\n{3,}/g, "\n\n");
 }
 
+/**
+ * Link auf das Studienmaterial des Versammlungsbibelstudiums: erster Dokumentlink
+ * zwischen „Versammlungsbibelstudium“ und „Schlussworte“ bzw. „Wachtturm-Studium“.
+ */
+export function findCongregationStudyUrl(md: string, base: string): string | null {
+  const start = md.search(/Versammlungsbibelstudium/i);
+  if (start < 0) return null;
+  const rest = md.slice(start);
+  const stop = rest.slice(25).search(/Schlussworte|Wachtturm[- ]Studium|Zusammenkunft am Wochenende/i);
+  const section = stop >= 0 ? rest.slice(0, stop + 25) : rest.slice(0, 1500);
+  for (const m of section.matchAll(/\[([^\]]+)\]\(([^)\s]+)\)/g)) {
+    if (!/\/wol\/(d|pc)\//.test(m[2])) continue;
+    try {
+      const abs = new URL(m[2], base).toString();
+      if (checkOfficialUrl(abs).ok) return abs;
+    } catch {
+      /* ungültiger Link */
+    }
+  }
+  return null;
+}
+
+/** „Abs. 1-7“ / „Abs. 8–14“ im Programmpunkt → Absatzbereich */
+export function paragraphRange(text: string): [number, number] | null {
+  const m = text.match(/Abs\.\s*(\d+)\s*[-–]\s*(\d+)/);
+  return m ? [Number(m[1]), Number(m[2])] : null;
+}
+
 /** Link auf den Wachtturm-Studienartikel der Woche aus der Zusammenkünfte-Seite. */
 export function findStudyArticleUrl(md: string, base: string): string | null {
   const links = [...md.matchAll(/\[([^\]]+)\]\(([^)\s]+)\)/g)].map((m) => ({ text: m[1], href: m[2] }));

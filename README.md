@@ -29,6 +29,8 @@ Es gibt keinen Server, keine Datenbank in der Cloud, kein Konto und keine Anmeld
 ## Woche laden und Antwortfelder
 
 - **„Woche von wol.jw.org laden“** (Zusammenkünfte-Seite): Claude ruft per Knopfdruck die Seite der Woche in der Online-Bibliothek ab (Anthropic-Server, nur jw.org erlaubt) sowie den dort verlinkten Wachtturm-Studienartikel. Übernommen wird der **Originaltext** der Seiten, nicht Claudes Formulierung. Benötigt den API-Schlüssel; kostet pro Woche wenige Cent. Ob jw.org den Abruf zulässt, entscheidet die Seite selbst – sonst „Text einfügen“ (mit Knopf „Aus Zwischenablage einfügen“).
+- **Versammlungsbibelstudium**: Der auf der Wochenseite verlinkte Stoff wird beim Laden mitabgerufen (nur der angegebene Absatzbereich) – mit Fragen und Antwortfeldern wie beim Wachtturm.
+- **Textmarker** wie in JW Library: Text auswählen → Farbe antippen; Markierung antippen → Farbe ändern oder entfernen. Bleibt beim Neuladen der Woche erhalten, nur auf dem Gerät gespeichert.
 - **Wochenseite im Aufbau der Online-Bibliothek**: Programmpunkte mit Dauer, blau verlinkte Bibelstellen und Verweise, unter jeder Frage ein **graues Antwortfeld**. „Alle Felder ausfüllen“ schreibt kurze KI-Antworten hinein; die Felder sind frei bearbeitbar, selbst geschriebene Antworten werden nie überschrieben.
 
 ## Quellenregeln (technisch umgesetzt)

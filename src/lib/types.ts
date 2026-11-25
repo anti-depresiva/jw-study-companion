@@ -102,6 +102,44 @@ export interface WorkbookItem {
   originalText: string;
   questions: string[];
   scriptures: string[];
+  /** Studienmaterial (z. B. Versammlungsbibelstudium), von der verlinkten WOL-Seite geladen */
+  material?: StudyMaterial | null;
+}
+
+/** Verlinktes Studienmaterial eines Programmpunkts – Originaltext von wol.jw.org. */
+export interface StudyMaterial {
+  title: string;
+  url: string;
+  paragraphs: Array<{ number: string; question: string; text: string }>;
+}
+
+/** Alle Fragen eines Programmpunkts – eigene Fragen, dann die Fragen des Studienmaterials. */
+export function itemQuestions(item: Pick<WorkbookItem, "questions" | "material">): string[] {
+  return [...item.questions, ...(item.material?.paragraphs ?? []).map((p) => p.question).filter((q) => q.trim())];
+}
+
+/** Text eines Programmpunkts inkl. Studienmaterial (für KI-Antworten). */
+export function itemFullText(item: Pick<WorkbookItem, "originalText" | "material">): string {
+  const m = item.material;
+  if (!m?.paragraphs.length) return item.originalText;
+  const body = m.paragraphs.map((p) => `${p.question ? `${p.question}\n` : ""}${p.number ? `${p.number} ` : ""}${p.text}`).join("\n\n");
+  return `${item.originalText}\n\nStudienmaterial: ${m.title}\n\n${body}`;
+}
+
+export type HighlightColor = "yellow" | "green" | "blue" | "pink" | "purple" | "orange";
+
+/** Textmarker-Markierung in einem Textblock der Wochenseite. */
+export interface Highlight {
+  id: string;
+  weekId: string;
+  /** Stabiler Schlüssel des Textblocks (bleibt beim Neuladen der Woche gleich) */
+  block: string;
+  start: number;
+  end: number;
+  /** Markierter Text – zur Kontrolle, falls sich der Text ändert */
+  text: string;
+  color: HighlightColor;
+  createdAt: string;
 }
 
 export interface Workbook {

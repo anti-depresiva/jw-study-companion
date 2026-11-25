@@ -4,6 +4,7 @@ import type {
   Favorite,
   Note,
   AnswerField,
+  Highlight,
   Lookup,
   ProgressEntry,
   Settings,
@@ -68,6 +69,11 @@ export interface Store {
 
   listFields(weekId: string): Promise<AnswerField[]>;
   saveField(field: Omit<AnswerField, "updatedAt">): Promise<AnswerField>;
+
+  listHighlights(weekId: string): Promise<Highlight[]>;
+  saveHighlight(h: Omit<Highlight, "id" | "createdAt">): Promise<Highlight>;
+  deleteHighlights(ids: string[]): Promise<void>;
+  setHighlightColor(id: string, color: Highlight["color"]): Promise<void>;
 
   listLookups(weekId: string): Promise<Lookup[]>;
   saveLookup(lookup: Omit<Lookup, "id" | "createdAt">): Promise<Lookup>;

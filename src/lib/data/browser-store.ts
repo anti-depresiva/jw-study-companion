@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from "@/lib/types";
-import type { AnswerField, AnswerSet, Article, Favorite, Lookup, Note, ProgressEntry, Settings, Source, Week, Workbook } from "@/lib/types";
+import type { AnswerField, AnswerSet, Article, Favorite, Highlight, Lookup, Note, ProgressEntry, Settings, Source, Week, Workbook } from "@/lib/types";
 import { weekRange } from "@/lib/week";
 import type { NewArticle, NewSource, NewWorkbook, Store } from "./store";
 
@@ -21,6 +21,7 @@ export interface Db {
   progress: ProgressEntry[];
   lookups: Lookup[];
   fields: AnswerField[];
+  highlights: Highlight[];
 }
 
 const emptyDb = (): Db => ({
@@ -36,6 +37,7 @@ const emptyDb = (): Db => ({
   progress: [],
   lookups: [],
   fields: [],
+  highlights: [],
 });
 
 const DB_NAME = "jw-plus-study";
@@ -362,6 +364,30 @@ export class BrowserStore implements Store {
       db.fields = db.fields.filter((f) => !(f.targetType === field.targetType && f.targetId === field.targetId && f.index === field.index));
       if (field.text.trim()) db.fields.push(saved);
       return saved;
+    });
+  }
+
+  listHighlights(weekId: string) {
+    return read((db) => db.highlights.filter((h) => h.weekId === weekId));
+  }
+  saveHighlight(h: Omit<Highlight, "id" | "createdAt">) {
+    return write((db) => {
+      const saved: Highlight = { ...h, id: crypto.randomUUID(), createdAt: now() };
+      // Überlappende Markierungen im selben Block werden ersetzt (wie in JW Library)
+      db.highlights = db.highlights.filter((x) => !(x.weekId === h.weekId && x.block === h.block && x.start < h.end && h.start < x.end));
+      db.highlights.push(saved);
+      return saved;
+    });
+  }
+  async deleteHighlights(ids: string[]) {
+    await write((db) => {
+      db.highlights = db.highlights.filter((h) => !ids.includes(h.id));
+    });
+  }
+  async setHighlightColor(id: string, color: Highlight["color"]) {
+    await write((db) => {
+      const h = db.highlights.find((x) => x.id === id);
+      if (h) h.color = color;
     });
   }
 

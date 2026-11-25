@@ -2,6 +2,7 @@ import { itemHref, paragraphHref } from "@/lib/routes";
 import type { Store } from "@/lib/data/store";
 import { checkOfficialUrl } from "@/lib/sources/domain";
 import type { Article, Paragraph, Source, SourceRef, TargetType, Week, Workbook, WorkbookItem } from "@/lib/types";
+import { itemFullText, itemQuestions } from "@/lib/types";
 import { SECTION_TITLES } from "@/lib/types";
 
 export const NO_SOURCE_MESSAGE = "Dazu konnte keine passende offizielle Quelle auf jw.org gefunden werden.";
@@ -66,8 +67,10 @@ export async function resolveTarget(
     };
   }
   const workbook = await store.getWorkbook(week.id);
-  const item = workbook?.items.find((i) => i.id === targetId);
-  if (!workbook || !item) throw new NotFoundError("Programmpunkt nicht gefunden.");
+  const found = workbook?.items.find((i) => i.id === targetId);
+  if (!workbook || !found) throw new NotFoundError("Programmpunkt nicht gefunden.");
+  // Fragen und Text des verlinkten Studienmaterials gehören zum Programmpunkt
+  const item: WorkbookItem = { ...found, questions: itemQuestions(found), originalText: itemFullText(found) };
   return {
     type,
     week,

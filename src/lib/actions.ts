@@ -6,7 +6,7 @@ import { z } from "zod";
 import { generateAnswerSet, generateComments, generateFieldAnswers } from "@/lib/ai/answers";
 import { askAssistant, lookupReference as lookupReferenceAi, type ChatTurn } from "@/lib/ai/assistant";
 import { aiEnabled, configureAi, friendlyError, model } from "@/lib/ai/client";
-import { cleanFetchedText, fetchJwPage, findStudyArticleUrl } from "@/lib/ai/wol";
+import { cleanFetchedText, fetchJwPage, findCongregationStudyUrl, findStudyArticleUrl, paragraphRange } from "@/lib/ai/wol";
 import { wolMeetingsUrl } from "@/lib/sources/links";
 import { findReferences } from "@/lib/references";
 import { extractArticleWithAi, extractWorkbookWithAi } from "@/lib/ai/extract";
@@ -17,7 +17,8 @@ import { scriptureLabels } from "@/lib/scripture";
 import { checkOfficialUrl } from "@/lib/sources/domain";
 import { checkWeek, isPreparing, prepareWeekAnswers } from "@/lib/study/prepare";
 import { resolveTarget } from "@/lib/study/targets";
-import type { AnswerSet, Favorite, Settings, SourceKind, TargetType, Variant } from "@/lib/types";
+import type { AnswerSet, Favorite, Highlight, Settings, SourceKind, StudyMaterial, TargetType, Variant } from "@/lib/types";
+import { itemQuestions } from "@/lib/types";
 import { currentWeek, formatRange, weekRange } from "@/lib/week";
 import { describeWeeks, splitWatchtowerArticles, splitWorkbookWeeks } from "@/lib/import/split";
 import { notifyChange } from "@/lib/client/use-data";
@@ -307,6 +308,14 @@ const WorkbookData = z.object({
         duration: opt(20),
         originalText: s(20000),
         questions: z.array(s(2000)).max(30),
+        material: z
+          .object({
+            title: s(300),
+            url: s(500),
+            paragraphs: z.array(z.object({ number: s(10), question: s(2000), text: s(20000) })).max(80),
+          })
+          .nullable()
+          .optional(),
       }),
     )
     .min(1, "Mindestens ein Programmpunkt")
@@ -408,6 +417,7 @@ export async function saveImport(input: {
         originalText: it.originalText.trim(),
         questions: it.questions.map((q) => q.trim()).filter(Boolean),
         scriptures: scriptureLabels(`${it.title}\n${it.originalText}`),
+        material: it.material && checkOfficialUrl(it.material.url).ok ? it.material : null,
       })),
     });
   }
@@ -478,6 +488,23 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
     workbook = await extractWorkbookWithAi(text, range);
   }
   const header = splitWorkbookWeeks(text, year, isoWeek);
+
+  // Versammlungsbibelstudium: verlinkten Stoff dazuladen
+  const cbs = workbook.items.find((i) => i.section === "versammlungsbibelstudium" || /Versammlungsbibelstudium/i.test(i.title));
+  let material: StudyMaterial | null = null;
+  const cbsUrl = cbs ? findCongregationStudyUrl(page.text, page.url) : null;
+  if (cbs && cbsUrl) {
+    opts.onStep?.("Lade das Versammlungsbibelstudium …");
+    try {
+      material = await loadStudyMaterial(cbsUrl, `${cbs.title}\n${cbs.originalText}`, range);
+      if (!material) notes.push("Im Stoff für das Versammlungsbibelstudium wurden keine Absätze erkannt.");
+    } catch (err) {
+      notes.push(`Versammlungsbibelstudium: ${friendlyError(err)}`);
+    }
+  } else if (cbs) {
+    notes.push("Kein Link zum Stoff des Versammlungsbibelstudiums gefunden.");
+  }
+
   let workbookItems = 0;
   if (workbook.items.length) {
     await saveImport({
@@ -490,7 +517,7 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
       data: {
         title: `Woche ${formatRange(range.start, range.end)}`,
         bibleReading: header.bibleReading ?? workbook.bibleReading,
-        items: workbook.items.map((it) => ({ ...it, duration: it.duration ?? null })),
+        items: workbook.items.map((it) => ({ ...it, duration: it.duration ?? null, material: it === cbs ? material : null })),
       },
     });
     workbookItems = workbook.items.length;
@@ -537,6 +564,47 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
   return { workbookItems, paragraphs, articleTitle, notes };
 }
 
+/** Lädt verlinkten Stoff (Originaltext) und nimmt nur den angegebenen Absatzbereich („Abs. 1-7“). */
+async function loadStudyMaterial(url: string, itemText: string, range: ReturnType<typeof weekRange>): Promise<StudyMaterial | null> {
+  const page = await fetchJwPage(url);
+  const text = normalizeImportText(cleanFetchedText(page.text));
+  let parsed = parseWatchtowerText(text);
+  if (parsed.paragraphs.filter((p) => p.question).length < 2) parsed = await extractArticleWithAi(text, range);
+  let paragraphs = parsed.paragraphs;
+  const r = paragraphRange(itemText);
+  if (r) {
+    const inRange = paragraphs.filter((p) => {
+      const n = parseInt(p.number, 10);
+      return Number.isFinite(n) && n >= r[0] && n <= r[1];
+    });
+    if (inRange.length) paragraphs = inRange;
+  }
+  if (!paragraphs.length) return null;
+  return {
+    title: parsed.title || page.title || "Studienmaterial",
+    url: page.url,
+    paragraphs: paragraphs.slice(0, 80).map((p) => ({ number: p.number, question: p.question ?? "", text: p.originalText })),
+  };
+}
+
+/* ── Textmarker ──────────────────────────────────────────────────── */
+
+export async function addHighlight(h: Omit<Highlight, "id" | "createdAt">) {
+  if (h.end <= h.start || h.text.length > 5000) throw new UserError("Ungültige Markierung.");
+  await store.saveHighlight(h);
+  notifyChange();
+}
+
+export async function removeHighlight(id: string) {
+  await store.deleteHighlights([id]);
+  notifyChange();
+}
+
+export async function recolorHighlight(id: string, color: Highlight["color"]) {
+  await store.setHighlightColor(id, color);
+  notifyChange();
+}
+
 /* ── Antwortfelder (graue Felder unter den Fragen) ───────────────── */
 
 export async function saveFieldText(t: Target, index: number, text: string) {
@@ -577,7 +645,7 @@ export async function fillWeekFields(weekId: string, onProgress?: (done: number,
   if (!aiEnabled()) throw new UserError("Für das Ausfüllen wird der Anthropic-API-Schlüssel benötigt (Einstellungen).");
   const [article, workbook] = await Promise.all([store.getArticle(weekId), store.getWorkbook(weekId)]);
   const targets: Target[] = [
-    ...(workbook?.items ?? []).filter((i) => i.questions.length).map((i) => ({ weekId, targetType: "workbook_item" as const, targetId: i.id })),
+    ...(workbook?.items ?? []).filter((i) => itemQuestions(i).length).map((i) => ({ weekId, targetType: "workbook_item" as const, targetId: i.id })),
     ...(article?.paragraphs ?? []).filter((p) => p.question).map((p) => ({ weekId, targetType: "paragraph" as const, targetId: p.id })),
   ];
   let done = 0;
