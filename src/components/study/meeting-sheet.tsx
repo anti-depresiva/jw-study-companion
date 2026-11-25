@@ -274,7 +274,13 @@ function ItemBlock({
         {/* Fragen, die über mehrere Zeilen gehen */}
         {item.questions.map((_, i) => (placed.has(i) ? null : box(i)))}
       </div>
-      {item.material && <MaterialBlock item={item} weekId={data.week!.id} fields={data.fields} />}
+      {item.material && (
+        <MaterialBlock
+          item={item}
+          weekId={data.week!.id}
+          fields={data.fields}
+        />
+      )}
       <Link
         href={itemHref(year, week, item.id)}
         className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-brand-mid hover:underline"
@@ -445,9 +451,21 @@ export function MeetingSheet({
 }
 
 /** Stoff des Versammlungsbibelstudiums: Frage → Antwortfeld → Absatz (wie beim Wachtturm). */
-function MaterialBlock({ item, weekId, fields }: { item: WorkbookItem; weekId: string; fields: AnswerField[] }) {
+function MaterialBlock({
+  item,
+  weekId,
+  fields,
+}: {
+  item: WorkbookItem;
+  weekId: string;
+  fields: AnswerField[];
+}) {
   const m = item.material!;
-  const target = { weekId, targetType: "workbook_item" as const, targetId: item.id };
+  const target = {
+    weekId,
+    targetType: "workbook_item" as const,
+    targetId: item.id,
+  };
   // Antwortfelder zählen nach den eigenen Fragen des Programmpunkts weiter
   const indices = m.paragraphs.reduce<number[]>((acc, p) => {
     const next = item.questions.length + acc.filter((x) => x >= 0).length;
@@ -455,7 +473,14 @@ function MaterialBlock({ item, weekId, fields }: { item: WorkbookItem; weekId: s
   }, []);
   const box = (i: number) => {
     const f = fieldOf(fields, "workbook_item", item.id, i);
-    return <AnswerBox target={target} index={i} initial={f?.text ?? ""} origin={f?.origin ?? null} />;
+    return (
+      <AnswerBox
+        target={target}
+        index={i}
+        initial={f?.text ?? ""}
+        origin={f?.origin ?? null}
+      />
+    );
   };
   return (
     <div className="mt-3 rounded-xl border bg-surface px-3 py-3 sm:px-4">
@@ -484,17 +509,19 @@ function MaterialBlock({ item, weekId, fields }: { item: WorkbookItem; weekId: s
                   {box(index)}
                 </>
               )}
-              <p className="reading-sm text-muted-foreground">
-                {p.number && (
-                  <span className="mr-1.5 font-semibold text-foreground">
-                    {p.number}
-                  </span>
-                )}
-                <MarkedText
-                  block={`cbs:${item.position}:${key}`}
-                  text={p.text}
-                />
-              </p>
+              {p.text && (
+                <p className="reading-sm text-muted-foreground">
+                  {p.number && (
+                    <span className="mr-1.5 font-semibold text-foreground">
+                      {p.number}
+                    </span>
+                  )}
+                  <MarkedText
+                    block={`cbs:${item.position}:${key}`}
+                    text={p.text}
+                  />
+                </p>
+              )}
             </div>
           );
         })}

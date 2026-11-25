@@ -37,6 +37,10 @@ export interface ParsedWorkbook {
 
 const PARA_START = /^(\d{1,2}) (?=[\p{Lu}„"(»‚'])/u;
 const QUESTION_START = /^(\d{1,2}(?: ?[-–,] ?\d{1,2})?)\. (.+)$/;
+const HEADING_QUESTION = /^[^\p{Ll}\d]{4,}?((\d{1,2}(?: ?[-–,] ?\d{1,2})?)\. (\p{Lu}.+\?.*))$/u;
+const QUESTION_END =/\?\s*(\([^)]*\))?\.?\s*$/;
+/** Antwortfeld der Online-Bibliothek */
+const ANSWER_FIELD = /^Deine Antworte?n?$/i;
 const REVIEW_HEADER = /^(WIE WÜRDEST DU ANTWORTEN|WAS HAST DU GELERNT|WIE WÜRDEST DU ANTWORTEN\?)/i;
 
 function expandNumbers(label: string): number[] {
@@ -93,28 +97,45 @@ export function parseWatchtowerText(raw: string): ParsedArticle {
       continue;
     }
     if (inReview) continue;
-    const q = line.match(QUESTION_START);
+    // „Deine Antwort“ beendet die Frage davor
+    if (ANSWER_FIELD.test(line)) {
+      if (current?.kind === "q") current = null;
+      continue;
+    }
+    // Zwischenüberschrift und Frage in einer Zeile: „ACHTE DARAUF, WIE DU REDEST6. Welche …?“
+    const q = line.match(QUESTION_START) ?? line.match(HEADING_QUESTION)?.slice(1);
     // Im Studienartikel stehen Absätze als „3 Text…“, Fragen als „3. Frage…?“
-    if (q) {
+    // Datumszeilen wie „30. NOVEMBER–6. DEZEMBER“ sind keine Fragen
+    if (q && /\p{Ll}/u.test(q[2])) {
       questions.push({ label: q[1].replace(/\s/g, "").replace("–", "-"), text: q[2] });
       current = { kind: "q", i: questions.length - 1 };
-      if (/\?\s*(\([^)]*\))?\s*$/.test(q[2])) current = null;
+      if (QUESTION_END.test(q[2])) current = null;
       continue;
     }
     const p = line.match(PARA_START);
     if (p) {
       const n = Number(p[1]);
-      if (!paragraphs.has(n) && (paragraphs.size === 0 ? n === 1 : true)) {
+      const asked = questions.some((x) => expandNumbers(x.label).includes(n));
+      if (!paragraphs.has(n) && (paragraphs.size === 0 ? n === 1 || asked : true)) {
         paragraphs.set(n, line.slice(p[0].length));
         current = { kind: "p", n };
         continue;
       }
     }
+    // Neues Format: Frage steht vor dem Absatz, der erste Absatz hat keine sichtbare Nummer
+    const pending: number | undefined = current === null && questions.length ? expandNumbers(questions[questions.length - 1].label)[0] : undefined;
+    if (pending && paragraphs.size === 0 && line.length >= 60) {
+      paragraphs.set(pending, line);
+      current = { kind: "p", n: pending };
+      continue;
+    }
+    // Zwischenüberschriften (nur Großbuchstaben) nicht in den Absatz übernehmen
+    if (current?.kind === "p" && !/\p{Ll}/u.test(line)) continue;
     if (current?.kind === "p") {
       paragraphs.set(current.n, `${paragraphs.get(current.n)} ${line}`);
     } else if (current?.kind === "q") {
       questions[current.i].text += ` ${line}`;
-      if (/\?\s*(\([^)]*\))?\s*$/.test(line)) current = null;
+      if (QUESTION_END.test(line)) current = null;
     }
   }
 
@@ -250,5 +271,50 @@ export function parseWorkbookText(raw: string): ParsedWorkbook {
     bibleReading,
     items,
     warnings,
+  };
+}
+
+export interface ParsedMaterial {
+  title: string;
+  paragraphs: Array<{ number: string; question: string; text: string }>;
+}
+
+const MATERIAL_SECTION = /^(Zum Nachlesen in der Bibel|Für Gespräche|Tauch tiefer ein|Lerne aus dem Bericht|Denk über das große Ganze nach|Fragen zum Nachdenken)(?!\p{L})/iu;
+const MATERIAL_END = /^(Mehr dazu|Deutsche Publikationen)\b/i;
+const ENDS_AS_QUESTION = /\?(\s*\([^)]*\))*\s*\.?\s*$/;
+
+/**
+ * Stoff ohne nummerierte Absätze (z. B. Kapitel eines Buchs beim Versammlungsbibelstudium):
+ * Fließtext, danach Fragen in Abschnitten wie „Für Gespräche“ oder „Tauch tiefer ein“.
+ * Fließtext wird als Absätze ohne Frage übernommen, jede Frage als eigener Eintrag mit Antwortfeld.
+ */
+export function parseChapterMaterial(raw: string): ParsedMaterial {
+  const lines = normalizeImportText(raw)
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const title = lines.slice(0, 6).find((l) => l.length >= 3 && l.length <= 100 && !/^Gedruckte Ausgabe$/i.test(l)) ?? "";
+
+  const firstQuestion = lines.findIndex((l, i) => ANSWER_FIELD.test(lines[i + 1] ?? "") && !ANSWER_FIELD.test(l));
+  const firstSection = lines.findIndex((l) => MATERIAL_SECTION.test(l));
+  const bodyEnd = [firstQuestion, firstSection].filter((i) => i >= 0).reduce((a, b) => Math.min(a, b), lines.length);
+
+  const body = lines.slice(0, bodyEnd).filter((l) => l.length >= 80 && /\p{Ll}/u.test(l));
+  const questions: string[] = [];
+  for (let i = bodyEnd; i < lines.length; i++) {
+    if (MATERIAL_END.test(lines[i])) break;
+    if (ANSWER_FIELD.test(lines[i])) continue;
+    // Abschnittsüberschrift kann mit der ersten Frage in einer Zeile stehen („Für Gespräche: Wie …?“)
+    const l = lines[i]
+      .replace(MATERIAL_SECTION, "")
+      .replace(/^:\s*/, "")
+      .replace(/^(\d{1,2})\.(?=\S)/, "$1. ")
+      .trim();
+    if (!l) continue;
+    if (ANSWER_FIELD.test(lines[i + 1] ?? "") || ENDS_AS_QUESTION.test(l)) questions.push(l);
+  }
+  return {
+    title,
+    paragraphs: [...body.map((text) => ({ number: "", question: "", text })), ...questions.map((question) => ({ number: "", question, text: "" }))],
   };
 }

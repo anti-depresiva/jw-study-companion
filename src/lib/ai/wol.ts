@@ -16,7 +16,8 @@ const ERRORS: Record<string, string> = {
   url_not_allowed: "Diese Adresse ist für den Abruf nicht erlaubt.",
   too_many_requests: "Zu viele Abrufe – bitte später erneut versuchen.",
   unavailable: "Der Abrufdienst ist gerade nicht verfügbar.",
-  content_too_large: "Die Seite ist zu groß für den Abruf.",
+  content_too_large: "Die Seite ist zu groß für den Abruf (content_too_large).",
+  url_too_long: "Die Adresse ist zu lang (url_too_long).",
   unsupported_content_type: "Die Seite hat ein nicht unterstütztes Format.",
 };
 
@@ -91,8 +92,10 @@ export function cleanFetchedText(md: string): string {
  * Link auf das Studienmaterial des Versammlungsbibelstudiums: erster Dokumentlink
  * zwischen „Versammlungsbibelstudium“ und „Schlussworte“ bzw. „Wachtturm-Studium“.
  */
-export function findCongregationStudyUrl(md: string, base: string): string | null {
-  const start = md.search(/Versammlungsbibelstudium/i);
+export function findCongregationStudyUrl(raw: string, base: string): string | null {
+  // Die Online-Bibliothek trennt das Wort mit einem weichen Trennstrich: „Versammlungs­bibelstudium“
+  const md = raw.replace(/­/g, "");
+  const start = md.search(/Versammlungs-?bibelstudium/i);
   if (start < 0) return null;
   const rest = md.slice(start);
   const stop = rest.slice(25).search(/Schlussworte|Wachtturm[- ]Studium|Zusammenkunft am Wochenende/i);
@@ -122,7 +125,10 @@ export function findStudyArticleUrl(md: string, base: string): string | null {
   const idx = md.search(/Wachtturm[- ]Studium|WACHTTURM[- ]STUDIUM/i);
   const after = idx >= 0 ? md.slice(idx) : md;
   const candidates = [...after.matchAll(/\[([^\]]+)\]\(([^)\s]+)\)/g)].map((m) => m[2]).concat(links.map((l) => l.href));
-  for (const href of candidates) {
+  // Wachtturm-Artikel haben eine 7-stellige Dokumentnummer (z. B. 2026566); Arbeitsheft-Wochen
+  // (202026405) und Buchkapitel sind länger – diese zuerst ausschließen, sonst wird das Falsche geladen.
+  const article = candidates.filter((h) => /\/wol\/d\/r\d+\/lp-\w+\/\d{7}(?:[/?#]|$)/.test(h));
+  for (const href of [...article, ...candidates]) {
     if (!/\/wol\/d\//.test(href)) continue;
     try {
       const abs = new URL(href, base).toString();

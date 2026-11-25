@@ -43,7 +43,7 @@ export async function extractArticleWithAi(text: string, week: WeekRange): Promi
     context: `VORLAGE:\n${source}`,
     prompt: `Finde in der Vorlage den Wachtturm-Studienartikel für die Studienwoche ${formatRange(week.start, week.end)} (KW ${week.week}). Enthält die Vorlage nur einen Studienartikel, nimm diesen. Gib Titel, Nummer, Lied, Leittext, Vorschau und alle Absätze mit Absatznummer, wörtlichem Text und der zugehörigen Originalfrage aus. Bei Fragen zu mehreren Absätzen (z. B. „4-5“) fasse diese Absätze zu einem Eintrag mit Nummer „4-5“ zusammen. Wenn kein passender Artikel enthalten ist: found = false.`,
     schema: ArticleSchema,
-    maxTokens: 48000,
+    maxTokens: 64000,
     effort: "low",
   });
 

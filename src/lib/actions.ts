@@ -11,7 +11,7 @@ import { wolMeetingsUrl } from "@/lib/sources/links";
 import { findReferences } from "@/lib/references";
 import { extractArticleWithAi, extractWorkbookWithAi } from "@/lib/ai/extract";
 import { store } from "@/lib/data";
-import { parseWatchtowerText, parseWorkbookText, type ParsedArticle, type ParsedWorkbook } from "@/lib/import/parse";
+import { parseChapterMaterial, parseWatchtowerText, parseWorkbookText, type ParsedArticle, type ParsedWorkbook } from "@/lib/import/parse";
 import { contentHash, normalizeImportText } from "@/lib/import/text";
 import { scriptureLabels } from "@/lib/scripture";
 import { checkOfficialUrl } from "@/lib/sources/domain";
@@ -568,22 +568,40 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
 async function loadStudyMaterial(url: string, itemText: string, range: ReturnType<typeof weekRange>): Promise<StudyMaterial | null> {
   const page = await fetchJwPage(url);
   const text = normalizeImportText(cleanFetchedText(page.text));
-  let parsed = parseWatchtowerText(text);
-  if (parsed.paragraphs.filter((p) => p.question).length < 2) parsed = await extractArticleWithAi(text, range);
-  let paragraphs = parsed.paragraphs;
-  const r = paragraphRange(itemText);
-  if (r) {
-    const inRange = paragraphs.filter((p) => {
-      const n = parseInt(p.number, 10);
-      return Number.isFinite(n) && n >= r[0] && n <= r[1];
-    });
-    if (inRange.length) paragraphs = inRange;
+  const pageTitle = page.title?.split(/\s+[—–-]\s+Wachtturm ONLINE-BIBLIOTHEK/i)[0].trim() || null;
+
+  // 1) Nummerierte Absätze mit Fragen (Studienartikel, Bücher mit Absatzfragen)
+  const numbered = parseWatchtowerText(text);
+  if (numbered.paragraphs.filter((p) => p.question).length >= 2) {
+    let paragraphs = numbered.paragraphs;
+    const r = paragraphRange(itemText);
+    if (r) {
+      const inRange = paragraphs.filter((p) => {
+        const n = parseInt(p.number, 10);
+        return Number.isFinite(n) && n >= r[0] && n <= r[1];
+      });
+      if (inRange.length) paragraphs = inRange;
+    }
+    return {
+      title: numbered.title || pageTitle || "Studienmaterial",
+      url: page.url,
+      paragraphs: paragraphs.slice(0, 80).map((p) => ({ number: p.number, question: p.question ?? "", text: p.originalText })),
+    };
   }
-  if (!paragraphs.length) return null;
+
+  // 2) Kapitel ohne Absatznummern (Erzählung, danach Fragen zum Besprechen)
+  const chapter = parseChapterMaterial(text);
+  if (chapter.paragraphs.some((p) => p.question) && chapter.paragraphs.some((p) => p.text)) {
+    return { title: pageTitle || chapter.title || "Studienmaterial", url: page.url, paragraphs: chapter.paragraphs.slice(0, 120) };
+  }
+
+  // 3) Notfalls von der KI strukturieren lassen (wörtlich geprüft)
+  const ai = await extractArticleWithAi(text, range);
+  if (!ai.paragraphs.length) return null;
   return {
-    title: parsed.title || page.title || "Studienmaterial",
+    title: ai.title || pageTitle || "Studienmaterial",
     url: page.url,
-    paragraphs: paragraphs.slice(0, 80).map((p) => ({ number: p.number, question: p.question ?? "", text: p.originalText })),
+    paragraphs: ai.paragraphs.slice(0, 80).map((p) => ({ number: p.number, question: p.question ?? "", text: p.originalText })),
   };
 }
 
