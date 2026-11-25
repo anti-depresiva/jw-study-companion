@@ -28,6 +28,11 @@ Es gibt keinen Server, keine Datenbank in der Cloud, kein Konto und keine Anmeld
 - **Import:** PDF (aus „Downloads“), Text einfügen oder manuelle Eingabe → bearbeitbare Vorschau. Ganze Ausgaben (mehrere Wochen) werden mit KI erkannt; die App sucht die passende Woche.
 - **Archiv, Quellen, Einstellungen** (API-Schlüssel, Modell, Bibelübersetzung, Hell/Dunkel, Schriftgröße, Standard-Antwort, Kommentarlänge, Wochentage, automatische Wochenprüfung beim Öffnen, jw.org-Suche, Benachrichtigungen, Sicherung).
 
+## Woche laden und Antwortfelder
+
+- **„Woche von wol.jw.org laden“** (Zusammenkünfte-Seite): Claude ruft per Knopfdruck die Seite der Woche in der Online-Bibliothek ab (Anthropic-Server, nur jw.org erlaubt) sowie den dort verlinkten Wachtturm-Studienartikel. Übernommen wird der **Originaltext** der Seiten, nicht Claudes Formulierung. Benötigt den API-Schlüssel; kostet pro Woche wenige Cent. Ob jw.org den Abruf zulässt, entscheidet die Seite selbst – sonst „Text einfügen“ (mit Knopf „Aus Zwischenablage einfügen“) oder PDF.
+- **Wochenseite im Aufbau der Online-Bibliothek**: Programmpunkte mit Dauer, blau verlinkte Bibelstellen und Verweise, unter jeder Frage ein **graues Antwortfeld**. „Alle Felder ausfüllen“ schreibt kurze KI-Antworten hinein; die Felder sind frei bearbeitbar, selbst geschriebene Antworten werden nie überschrieben.
+
 ## Quellenregeln (technisch umgesetzt)
 
 - **Nur jw.org:** Jede URL muss HTTPS sein und exakt `jw.org`, `www.jw.org` oder `wol.jw.org` als Host haben (`src/lib/sources/domain.ts`).

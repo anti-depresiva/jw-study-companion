@@ -194,6 +194,11 @@ export function parseWorkbookText(raw: string): ParsedWorkbook {
   let lastNumber = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    // Ende des Wochenprogramms (Online-Bibliothek zeigt danach z. B. das Wachtturm-Studium)
+    if (lastNumber >= 3 && /^(Schlussworte|Wachtturm-Studium|WACHTTURM-STUDIUM|Zusammenkunft am Wochenende)/.test(line)) {
+      if (/^Schlussworte/.test(line)) continue;
+      break;
+    }
     // Kopfzeilen (Datum/Bibelbuch, oft im Sperrsatz) und reine Seitenzahlen überspringen
     if (WEEK_HEADER.test(line.replace(/\s+/g, "")) || /^\d{1,2}$/.test(line)) continue;
     const header = SECTION_HEADERS.find(([re]) => re.test(line));

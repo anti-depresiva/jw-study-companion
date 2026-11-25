@@ -235,9 +235,31 @@ export function ImportWizard(props: Props) {
             </div>
           ) : (
             <div>
-              <Label htmlFor="text" className="mb-2 block font-semibold">
-                Text aus der Veröffentlichung
-              </Label>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <Label htmlFor="text" className="font-semibold">
+                  Text aus der Veröffentlichung
+                </Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      const clip = await navigator.clipboard.readText();
+                      if (!clip.trim()) return toast.error("Die Zwischenablage ist leer.");
+                      setText(clip);
+                      toast.success(`${clip.length.toLocaleString("de-AT")} Zeichen eingefügt.`);
+                    } catch {
+                      toast.error("Zugriff auf die Zwischenablage nicht möglich – bitte ins Feld tippen und „Einsetzen“ wählen.");
+                    }
+                  }}
+                >
+                  <ClipboardPaste /> Aus Zwischenablage einfügen
+                </Button>
+              </div>
+              <p className="mb-2 text-xs text-muted-foreground">
+                Tipp: Seite der Woche in der Online-Bibliothek öffnen, lange auf den Text tippen → „Alles auswählen“ → „Kopieren“, dann hier einfügen.
+              </p>
               <Textarea
                 id="text"
                 value={text}

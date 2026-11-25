@@ -3,9 +3,11 @@
  * Daten: IndexedDB (lokal). KI: direkte Anfrage an die Anthropic-API.
  */
 import { z } from "zod";
-import { generateAnswerSet, generateComments } from "@/lib/ai/answers";
+import { generateAnswerSet, generateComments, generateFieldAnswers } from "@/lib/ai/answers";
 import { askAssistant, lookupReference as lookupReferenceAi, type ChatTurn } from "@/lib/ai/assistant";
-import { aiEnabled, configureAi, model } from "@/lib/ai/client";
+import { aiEnabled, configureAi, friendlyError, model } from "@/lib/ai/client";
+import { cleanFetchedText, fetchJwPage, findStudyArticleUrl } from "@/lib/ai/wol";
+import { wolMeetingsUrl } from "@/lib/sources/links";
 import { findReferences } from "@/lib/references";
 import { extractArticleWithAi, extractWorkbookWithAi } from "@/lib/ai/extract";
 import { store } from "@/lib/data";
@@ -363,7 +365,7 @@ export class DuplicateImportError extends UserError {}
 export async function saveImport(input: {
   weekId: string;
   kind: "watchtower" | "workbook";
-  origin: "pdf" | "text" | "manual";
+  origin: "pdf" | "text" | "manual" | "wol";
   contentHash: string | null;
   sourceUrl: string | null;
   overwrite: boolean;
@@ -386,6 +388,13 @@ export async function saveImport(input: {
     throw new DuplicateImportError("Diese Veröffentlichung wurde bereits importiert.");
   }
   const importUrl = url && sources.some((x) => x.url === url) ? null : url;
+  // Direkt von wol.jw.org abgerufen = geprüfte offizielle Quelle; sonst vom Benutzer importiert
+  const verification = input.origin === "wol" ? ("verified_link" as const) : ("user_import" as const);
+  if (input.origin === "wol" && url) {
+    for (const x of sources.filter((x) => x.url === url && x.verification === "unverified_pattern")) {
+      await store.updateSource(x.id, { verification: "verified_link", note: "Seite erfolgreich abgerufen." });
+    }
+  }
 
   const registerSource = async (title: string, kind: "watchtower" | "workbook", publishedAt: string | null) => {
     const res = await store.addSource({
@@ -394,8 +403,9 @@ export async function saveImport(input: {
       kind,
       url: importUrl,
       publishedAt,
-      verification: "user_import",
+      verification,
       origin: input.origin,
+
       contentHash: input.contentHash,
       note: "Inhalt vom Benutzer importiert.",
     });
@@ -479,4 +489,163 @@ export async function lookupReference(t: Target, referenceText: string) {
 export async function deleteLookup(id: string) {
   await store.deleteLookup(id);
   notifyChange();
+}
+
+/* ── Woche direkt von wol.jw.org laden (Abruf durch Claude) ──────── */
+
+export interface WolImportResult {
+  workbookItems: number;
+  paragraphs: number;
+  articleTitle: string | null;
+  notes: string[];
+}
+
+/**
+ * Lädt die Zusammenkünfte-Seite der Woche aus der Online-Bibliothek und den dort
+ * verlinkten Wachtturm-Studienartikel. Übernommen wird der Originaltext der Seiten.
+ */
+export async function importFromWol(year: number, isoWeek: number, opts: { overwrite?: boolean; onStep?: (msg: string) => void } = {}): Promise<WolImportResult> {
+  await withAi();
+  if (!aiEnabled()) throw new UserError("Für das Laden von wol.jw.org wird der Anthropic-API-Schlüssel benötigt (Einstellungen).");
+  const week = await store.ensureWeek(year, isoWeek);
+  const range = weekRange(year, isoWeek);
+  const notes: string[] = [];
+  const [hasWorkbook, hasArticle] = await Promise.all([store.getWorkbook(week.id), store.getArticle(week.id)]);
+  if ((hasWorkbook || hasArticle) && !opts.overwrite) {
+    throw new DuplicateImportError("Für diese Woche sind bereits Inhalte vorhanden.");
+  }
+
+  // 1) Arbeitsheft-Woche
+  opts.onStep?.("Lade die Woche aus der Online-Bibliothek …");
+  const meetingsUrl = wolMeetingsUrl(year, isoWeek);
+  const page = await fetchJwPage(meetingsUrl);
+  const text = normalizeImportText(cleanFetchedText(page.text));
+  if (text.length < 300) throw new UserError("Die Seite der Online-Bibliothek enthielt keinen verwertbaren Text.");
+
+  let workbook = parseWorkbookText(text);
+  if (workbook.items.length < 3 || workbook.items.length > 15) {
+    opts.onStep?.("Strukturiere das Wochenprogramm …");
+    workbook = await extractWorkbookWithAi(text, range);
+  }
+  const header = splitWorkbookWeeks(text, year, isoWeek);
+  let workbookItems = 0;
+  if (workbook.items.length) {
+    await saveImport({
+      weekId: week.id,
+      kind: "workbook",
+      origin: "wol",
+      contentHash: await contentHash(text),
+      sourceUrl: page.url,
+      overwrite: true,
+      data: {
+        title: `Woche ${formatRange(range.start, range.end)}`,
+        bibleReading: header.bibleReading ?? workbook.bibleReading,
+        items: workbook.items.map((it) => ({ ...it, duration: it.duration ?? null })),
+      },
+    });
+    workbookItems = workbook.items.length;
+  } else {
+    notes.push("Das Arbeitsheft-Programm wurde auf der Seite nicht gefunden.");
+  }
+
+  // 2) Wachtturm-Studienartikel (auf der Seite verlinkt)
+  let paragraphs = 0;
+  let articleTitle: string | null = null;
+  const articleUrl = findStudyArticleUrl(page.text, page.url);
+  if (articleUrl) {
+    opts.onStep?.("Lade den Wachtturm-Studienartikel …");
+    try {
+      const art = await fetchJwPage(articleUrl);
+      const artText = normalizeImportText(cleanFetchedText(art.text));
+      let article = parseWatchtowerText(artText);
+      if (article.paragraphs.filter((p) => p.question).length < 3) {
+        opts.onStep?.("Strukturiere den Studienartikel …");
+        article = await extractArticleWithAi(artText, range);
+      }
+      if (article.paragraphs.length) {
+        await saveImport({
+          weekId: week.id,
+          kind: "watchtower",
+          origin: "wol",
+          contentHash: await contentHash(artText),
+          sourceUrl: art.url,
+          overwrite: true,
+          data: { ...article, title: article.title || art.title || "Wachtturm-Studienartikel", issue: null, publishedAt: null },
+        });
+        paragraphs = article.paragraphs.length;
+        articleTitle = article.title || art.title;
+      } else {
+        notes.push("Im Studienartikel wurden keine Absätze erkannt.");
+      }
+    } catch (err) {
+      notes.push(`Wachtturm-Studienartikel: ${friendlyError(err)}`);
+    }
+  } else {
+    notes.push("Auf der Seite wurde kein Link zum Wachtturm-Studienartikel gefunden.");
+  }
+  notifyChange();
+  return { workbookItems, paragraphs, articleTitle, notes };
+}
+
+/* ── Antwortfelder (graue Felder unter den Fragen) ───────────────── */
+
+export async function saveFieldText(t: Target, index: number, text: string) {
+  if (text.length > 5000) throw new UserError("Die Antwort ist zu lang.");
+  await resolveTarget(store, t.weekId, t.targetType, t.targetId);
+  return store.saveField({ ...t, index, text, origin: "user" });
+}
+
+/** Füllt die Felder eines Abschnitts. Selbst geschriebene Antworten werden nie überschrieben. */
+export async function fillFields(t: Target, opts: { replaceAi?: boolean } = {}): Promise<number> {
+  const settings = await withAi();
+  const target = await resolveTarget(store, t.weekId, t.targetType, t.targetId);
+  const existing = (await store.listFields(t.weekId)).filter((f) => f.targetType === t.targetType && f.targetId === t.targetId);
+  const keep = (i: number) => existing.some((f) => f.index === i && (f.origin === "user" || !opts.replaceAi));
+  let filled = 0;
+
+  if (target.type === "paragraph") {
+    if (!target.paragraph.question || keep(0)) return 0;
+    const answer = (await store.getAnswer("paragraph", target.paragraph.id)) ?? (await generateAnswerSet(store, target, settings));
+    await store.saveField({ ...t, index: 0, text: answer.short, origin: "ai" });
+    return 1;
+  }
+
+  const open = target.item.questions.map((_, i) => i).filter((i) => !keep(i));
+  if (open.length === 0) return 0;
+  const { answers } = await generateFieldAnswers(target, settings);
+  for (const i of open) {
+    if (!answers[i]) continue;
+    await store.saveField({ ...t, index: i, text: answers[i], origin: "ai" });
+    filled++;
+  }
+  return filled;
+}
+
+/** „Alle Felder ausfüllen“ für die ganze Woche (läuft auf dem Gerät, App geöffnet lassen). */
+export async function fillWeekFields(weekId: string, onProgress?: (done: number, total: number) => void) {
+  await withAi();
+  if (!aiEnabled()) throw new UserError("Für das Ausfüllen wird der Anthropic-API-Schlüssel benötigt (Einstellungen).");
+  const [article, workbook] = await Promise.all([store.getArticle(weekId), store.getWorkbook(weekId)]);
+  const targets: Target[] = [
+    ...(workbook?.items ?? []).filter((i) => i.questions.length).map((i) => ({ weekId, targetType: "workbook_item" as const, targetId: i.id })),
+    ...(article?.paragraphs ?? []).filter((p) => p.question).map((p) => ({ weekId, targetType: "paragraph" as const, targetId: p.id })),
+  ];
+  let done = 0;
+  const errors: string[] = [];
+  const queue = [...targets];
+  const worker = async () => {
+    for (let t = queue.shift(); t; t = queue.shift()) {
+      try {
+        await fillFields(t);
+      } catch (err) {
+        errors.push(friendlyError(err));
+      }
+      done++;
+      onProgress?.(done, targets.length);
+      notifyChange();
+    }
+  };
+  await Promise.all([worker(), worker()]);
+  notifyChange();
+  return { total: targets.length, errors: [...new Set(errors)] };
 }

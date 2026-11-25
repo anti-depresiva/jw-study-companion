@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { VERIFICATION_TEXT } from "./source-block";
 
 const KIND_TEXT: Record<SourceKind, string> = { workbook: "Arbeitsheft", watchtower: "Wachtturm", bible: "Bibel", other: "Übersicht" };
-const ORIGIN_TEXT: Record<Source["origin"], string> = { pattern: "Linkmuster", search: "jw.org-Suche", manual: "Manuell", pdf: "PDF-Import", text: "Text-Import" };
+const ORIGIN_TEXT: Record<Source["origin"], string> = { pattern: "Linkmuster", search: "jw.org-Suche", manual: "Manuell", pdf: "PDF-Import", text: "Text-Import", wol: "Online-Bibliothek" };
 
 export function SourcesPanel({ weekId, sources }: { weekId: string; sources: Source[] }) {
   const [busy, setBusy] = useState<string | null>(null);

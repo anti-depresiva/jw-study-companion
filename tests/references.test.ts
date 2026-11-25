@@ -15,3 +15,11 @@ describe("Verweise auf Veröffentlichungen", () => {
     expect(findReferences("Lies Klg 3:22. Wie viele Brüder kamen? 12 Personen. Das ist so.")).toEqual([]);
   });
 });
+
+describe("Datierte Wachtturm-Verweise", () => {
+  it("erkennt „w07 1. 6. 11 Abs. 4“", () => {
+    const refs = findReferences("Warum ist es gut, Schwierigkeiten durchzustehen? (w07 1. 6. 11 Abs. 4)");
+    expect(refs.map((r) => r.text)).toEqual(["w07 1. 6. 11 Abs. 4"]);
+    expect(refs[0].description).toBe("Der Wachtturm 1. 6. 2007, S. 11, Abs. 4");
+  });
+});

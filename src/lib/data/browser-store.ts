@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from "@/lib/types";
-import type { AnswerSet, Article, Favorite, Lookup, Note, ProgressEntry, Settings, Source, StoredImage, Week, Workbook } from "@/lib/types";
+import type { AnswerField, AnswerSet, Article, Favorite, Lookup, Note, ProgressEntry, Settings, Source, StoredImage, Week, Workbook } from "@/lib/types";
 import { weekRange } from "@/lib/week";
 import type { NewArticle, NewSource, NewWorkbook, Store } from "./store";
 
@@ -20,6 +20,7 @@ export interface Db {
   favorites: Favorite[];
   progress: ProgressEntry[];
   lookups: Lookup[];
+  fields: AnswerField[];
 }
 
 const emptyDb = (): Db => ({
@@ -34,6 +35,7 @@ const emptyDb = (): Db => ({
   favorites: [],
   progress: [],
   lookups: [],
+  fields: [],
 });
 
 const DB_NAME = "jw-plus-study";
@@ -347,6 +349,18 @@ export class BrowserStore implements Store {
         (p) => !(p.targetType === entry.targetType && p.targetId === entry.targetId),
       );
       db.progress.push({ ...entry, updatedAt: now() });
+    });
+  }
+
+  listFields(weekId: string) {
+    return read((db) => db.fields.filter((f) => f.weekId === weekId));
+  }
+  saveField(field: Omit<AnswerField, "updatedAt">) {
+    return write((db) => {
+      const saved: AnswerField = { ...field, updatedAt: now() };
+      db.fields = db.fields.filter((f) => !(f.targetType === field.targetType && f.targetId === field.targetId && f.index === field.index));
+      if (field.text.trim()) db.fields.push(saved);
+      return saved;
     });
   }
 

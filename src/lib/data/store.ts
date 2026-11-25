@@ -3,6 +3,7 @@ import type {
   Article,
   Favorite,
   Note,
+  AnswerField,
   Lookup,
   ProgressEntry,
   StoredImage,
@@ -65,6 +66,9 @@ export interface Store {
 
   listProgress(weekId: string): Promise<ProgressEntry[]>;
   setProgress(entry: Omit<ProgressEntry, "updatedAt">): Promise<void>;
+
+  listFields(weekId: string): Promise<AnswerField[]>;
+  saveField(field: Omit<AnswerField, "updatedAt">): Promise<AnswerField>;
 
   listLookups(weekId: string): Promise<Lookup[]>;
   saveLookup(lookup: Omit<Lookup, "id" | "createdAt">): Promise<Lookup>;

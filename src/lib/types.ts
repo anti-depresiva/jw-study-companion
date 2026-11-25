@@ -67,7 +67,7 @@ export type Verification =
   | "user_confirmed" // vom Benutzer bestätigt
   | "user_import" // Inhalt vom Benutzer importiert (PDF/Text)
   | "rejected";
-export type SourceOrigin = "pattern" | "search" | "manual" | "pdf" | "text";
+export type SourceOrigin = "pattern" | "search" | "manual" | "pdf" | "text" | "wol";
 
 export interface Source {
   id: string;
@@ -241,4 +241,16 @@ export interface StoredImage {
   height: number;
   blob: Blob;
   createdAt: string;
+}
+
+/** Antwortfeld unter einer Frage (wie die grauen Felder in der Online-Bibliothek). */
+export interface AnswerField {
+  weekId: string;
+  targetType: TargetType;
+  targetId: string;
+  /** Index der Frage innerhalb des Programmpunkts (bei Absätzen immer 0) */
+  index: number;
+  text: string;
+  origin: "ai" | "user";
+  updatedAt: string;
 }

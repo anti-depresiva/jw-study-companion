@@ -30,10 +30,11 @@ export async function loadWeek(year: number, week: number) {
       notes: [],
       sources: [],
       lookups: [],
+      fields: [],
       summary: summarizeProgress(null, null, []),
     };
   }
-  const [article, workbook, progress, answers, notes, sources, lookups] = await Promise.all([
+  const [article, workbook, progress, answers, notes, sources, lookups, fields] = await Promise.all([
     store.getArticle(weekRow.id),
     store.getWorkbook(weekRow.id),
     store.listProgress(weekRow.id),
@@ -41,8 +42,9 @@ export async function loadWeek(year: number, week: number) {
     store.listNotes(weekRow.id),
     store.listSources(weekRow.id),
     store.listLookups(weekRow.id),
+    store.listFields(weekRow.id),
   ]);
-  return { settings, week: weekRow, article, workbook, progress, answers, notes, sources, lookups, summary: summarizeProgress(article, workbook, progress) };
+  return { settings, week: weekRow, article, workbook, progress, answers, notes, sources, lookups, fields, summary: summarizeProgress(article, workbook, progress) };
 }
 
 export type WeekData = Awaited<ReturnType<typeof loadWeek>>;

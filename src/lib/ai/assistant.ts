@@ -23,12 +23,12 @@ export const jwSearchTool = (maxUses: number): BetaToolUnion => ({
 });
 
 /** Seiten von jw.org lesen (nur URLs aus Suchergebnissen bzw. dem Gespräch). */
-export const jwFetchTool = (maxUses: number): BetaToolUnion => ({
+export const jwFetchTool = (maxUses: number, maxContentTokens = 20000): BetaToolUnion => ({
   type: "web_fetch_20260209",
   name: "web_fetch",
   max_uses: maxUses,
   allowed_domains: SEARCH_ALLOWED_DOMAINS,
-  max_content_tokens: 20000,
+  max_content_tokens: maxContentTokens,
 });
 
 /** Sammelt alle URLs aus Suchergebnissen und Zitaten – nur jw.org wird übernommen. */

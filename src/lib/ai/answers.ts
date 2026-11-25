@@ -6,7 +6,7 @@ import { assertSourceReady, buildSourceRef, NO_SOURCE_MESSAGE, type ResolvedTarg
 import type { AnswerSet, CommentKind, ExtraComment, Settings } from "@/lib/types";
 import { model, structured } from "./client";
 import { allowedRefs, checkGrounding, filterScriptureList } from "./grounding";
-import { articleContext, commentsTask, paragraphTask, SYSTEM_PROMPT, workbookContext, workbookTask } from "./prompts";
+import { articleContext, commentsTask, paragraphTask, SYSTEM_PROMPT, translationNote, workbookContext, workbookTask } from "./prompts";
 
 const AnswerSchema = z.strictObject({
   grounded: z.boolean(),
@@ -117,4 +117,36 @@ export async function generateComments(store: Store, t: ResolvedTarget, settings
   });
 
   return store.saveAnswer({ ...existing, extraComments: [...existing.extraComments, ...comments], warnings: [...warnings] });
+}
+
+const FieldsSchema = z.strictObject({
+  answers: z.array(z.strictObject({ index: z.number().int(), grounded: z.boolean(), answer: z.string() })),
+});
+
+/**
+ * Füllt die Antwortfelder eines Programmpunkts: je Frage eine kurze, natürliche Antwort.
+ * Persönliche Fragen ohne Grundlage im Material bleiben leer (zum selbst Ausfüllen).
+ */
+export async function generateFieldAnswers(t: ResolvedTarget, settings: Settings): Promise<{ answers: string[]; warnings: string[] }> {
+  assertSourceReady(t);
+  if (t.type !== "workbook_item" || t.item.questions.length === 0) return { answers: [], warnings: [] };
+  const allowed = allowedFor(t);
+  const length = settings.commentLength === "kurz" ? "15–30" : settings.commentLength === "lang" ? "35–60" : "25–45";
+  const out = await structured({
+    system: SYSTEM_PROMPT,
+    context: contextFor(t),
+    prompt: `Aufgabe: Beantworte für den Programmpunkt ${t.item.position} „${t.item.title}“ jede der folgenden Fragen einzeln – so, wie man sie bei der Zusammenkunft kurz kommentieren würde (${length} Wörter, natürlich formuliert).
+${t.item.questions.map((q, i) => `${i}: ${q}`).join("\n")}
+
+Regeln: Antworte nur auf Grundlage des Studienmaterials. Bei persönlichen Fragen, die nur der Benutzer selbst beantworten kann (z. B. „Was hast du beim Bibellesen entdeckt?“), setze grounded = false und answer = "". Nenne nur Bibelstellen aus dieser Liste: ${allowed.map((a) => a.label).join("; ") || "keine"}.${translationNote(settings)}`,
+    schema: FieldsSchema,
+    maxTokens: 6000,
+  });
+  const answers = t.item.questions.map((_, i) => {
+    const a = out.answers.find((x) => x.index === i);
+    return a && a.grounded ? a.answer.trim() : "";
+  });
+  const check = checkGrounding(answers, allowed);
+  const warnings = check.ok ? [] : [`Nicht im Originaltext belegte Bibelstelle(n): ${check.invented.join(", ")} – bitte prüfen.`];
+  return { answers, warnings };
 }

@@ -5,7 +5,7 @@
 import { checkOfficialUrl } from "@/lib/sources/domain";
 
 /** Zeitschriften mit Ausgabe: w24.01 (Wachtturm), g23.2 (Erwachet!), wp, mwb */
-const ISSUE = String.raw`(?:w|g|wp|mwb)\d{2}\.\d{1,2}`;
+const ISSUE = String.raw`(?:(?:w|g)\d{2}\s\d{1,2}\.\s?\d{1,2}\.|(?:w|g|wp|mwb)\d{2}\.\d{1,2})`;
 /** Bekannte Kurzsymbole (Kleinbuchstaben, mit Bindestrich-Bänden wie it-1) */
 const SYMBOL = String.raw`(?:lmd|lff|lfb|th|wcg|bt|cl|ia|jy|kr|lv|bh|bhs|rr|si|scl|od|be|sjj|jl|rs|lvs|it-[12]|ip-[12]|ijwbq|ijwfq|ijwbv|ijwyp|ijwwd|ijwhf|nwtsty)`;
 const LOCATOR = String.raw`(?:Lektion\s+\d{1,3}(?:\s+Punkt\s+\d{1,2}[a-z]?)?|Kap\.\s*\d{1,3}(?:\s+Abs\.\s*\d{1,3}(?:-\d{1,3})?)?|Artikel\s+\d{1,3}|Frage\s+\d{1,3}|Anhang\s+[A-Z](?:\s+Punkt\s+\d{1,2})?|Abs\.\s*\d{1,3}(?:-\d{1,3})?|\d{1,4}(?:-\d{1,4})?(?:\s+Abs\.\s*\d{1,3}(?:-\d{1,3})?)?)`;
@@ -24,6 +24,15 @@ export interface Reference {
 }
 
 function describe(symbol: string, locator: string): string {
+  // Ältere Wachtturm-Ausgaben erschienen halbmonatlich: „w07 1. 6.“ = 1. Juni 2007
+  const dated = symbol.match(/^(w|g)(\d{2})\s(\d{1,2})\.\s?(\d{1,2})\.$/);
+  if (dated) {
+    const name = dated[1] === "w" ? "Der Wachtturm" : "Erwachet!";
+    const yy = Number(dated[2]);
+    const page = locator.match(/^(\d{1,4}(?:-\d{1,4})?)/)?.[1];
+    const para = locator.match(/Abs\.\s*([\d-]+)/)?.[1];
+    return [`${name} ${dated[3]}. ${dated[4]}. ${yy > 50 ? 1900 + yy : 2000 + yy}`, page && `S. ${page}`, para && `Abs. ${para}`].filter(Boolean).join(", ");
+  }
   const issue = symbol.match(/^(w|g|wp|mwb)(\d{2})\.(\d{1,2})$/);
   if (issue) {
     const name = { w: "Der Wachtturm", g: "Erwachet!", wp: "Der Wachtturm (öffentliche Ausgabe)", mwb: "Arbeitsheft" }[issue[1]];
@@ -44,6 +53,17 @@ export function findReferences(text: string): Reference[] {
     const url = `https://wol.jw.org/de/wol/l/r10/lp-x?q=${encodeURIComponent(ref)}`;
     if (!checkOfficialUrl(url).ok) continue;
     out.push({ text: ref, symbol: m[1], locator: m[2], description: describe(m[1], m[2]), url });
+  }
+  return out;
+}
+
+/** Verweise mit Position im Text (für verlinkte Darstellung). */
+export function referenceSpans(text: string): Array<{ start: number; end: number; ref: Reference }> {
+  const out: Array<{ start: number; end: number; ref: Reference }> = [];
+  for (const m of text.matchAll(REF_RE)) {
+    if (m.index === undefined) continue;
+    const ref = findReferences(m[0])[0];
+    if (ref) out.push({ start: m.index, end: m.index + m[0].length, ref });
   }
   return out;
 }

@@ -211,3 +211,13 @@ export function uncoveredScriptures(text: string, allowed: ScriptureRef[]): Scri
 export function scriptureLabels(text: string): string[] {
   return findScriptures(text).map((r) => r.label);
 }
+
+/** Fundstellen mit Position im Text (für verlinkte Darstellung). */
+export function scriptureSpans(text: string): Array<{ start: number; end: number; ref: ScriptureRef }> {
+  const out: Array<{ start: number; end: number; ref: ScriptureRef }> = [];
+  for (const m of text.matchAll(REF_RE)) {
+    const refs = findScriptures(m[0]);
+    if (refs.length && m.index !== undefined) out.push({ start: m.index, end: m.index + m[0].length, ref: refs[0] });
+  }
+  return out;
+}

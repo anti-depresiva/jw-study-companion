@@ -125,7 +125,8 @@ export async function extractPageImages(pdf: PdfDoc, pages: number[]): Promise<P
     if (!ctx) continue;
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+    // „print“: rendert ohne requestAnimationFrame – läuft auch, wenn die App kurz im Hintergrund ist
+    await page.render({ canvas, canvasContext: ctx, viewport, intent: "print" }).promise;
 
     // Von oben nach unten, links nach rechts (PDF-y wächst nach oben)
     boxes.sort((a, b) => b.y1 - a.y1 || a.x0 - b.x0);
