@@ -108,3 +108,44 @@ export async function extractWorkbookWithAi(text: string, week: WeekRange): Prom
     warnings,
   };
 }
+
+const MaterialSchema = z.strictObject({
+  found: z.boolean(),
+  title: z.string(),
+  paragraphs: z.array(z.strictObject({ number: z.string(), text: z.string(), question: z.string() })),
+  discussion_questions: z.array(z.string()),
+});
+
+export interface ExtractedMaterial {
+  title: string;
+  paragraphs: Array<{ number: string; question: string; text: string }>;
+}
+
+/**
+ * Stoff für das Versammlungsbibelstudium (Buchkapitel, Lektion o. Ä.) strukturieren.
+ * Absätze mit eigener Frage behalten sie; Fragen zum Besprechen am Ende werden eigene Einträge.
+ * Alles wird technisch gegen die Vorlage geprüft (wörtlich).
+ */
+export async function extractMaterialWithAi(text: string): Promise<ExtractedMaterial> {
+  const source = text.slice(0, MAX_CHARS);
+  const out = await structured({
+    system: EXTRACT_SYSTEM,
+    context: `VORLAGE:\n${source}`,
+    prompt: `Die Vorlage ist Studienstoff aus einer Veröffentlichung (z. B. ein Buchkapitel oder eine Lektion). Gib den Titel aus, dann alle Absätze des Haupttexts in Reihenfolge mit Absatznummer (leer, wenn keine sichtbar ist), wörtlichem Text und der zugehörigen Originalfrage (leer, wenn der Absatz keine eigene Frage hat). Unter discussion_questions alle übrigen Fragen der Vorlage wörtlich (z. B. aus Abschnitten wie „Für Gespräche“, „Tauch tiefer ein“, „Lerne aus dem Bericht“), ohne Abschnittsüberschriften. Bildunterschriften, Navigation, Fußzeilen und „Deine Antwort“ weglassen. Wenn kein Studienstoff enthalten ist: found = false.`,
+    schema: MaterialSchema,
+    maxTokens: 64000,
+    effort: "low",
+  });
+  if (!out.found) return { title: "", paragraphs: [] };
+  const paragraphs = out.paragraphs
+    .filter((p) => p.text && verbatimRatio(p.text, source) >= 0.85)
+    .map((p) => ({
+      number: p.number.trim(),
+      text: p.text.trim(),
+      question: p.question && verbatimRatio(p.question, source, 4) >= 0.8 ? p.question.trim() : "",
+    }));
+  const questions = out.discussion_questions
+    .filter((q) => q.trim() && verbatimRatio(q, source, 4) >= 0.8)
+    .map((q) => ({ number: "", question: q.trim(), text: "" }));
+  return { title: out.title && verbatimRatio(out.title, source, 3) >= 0.6 ? out.title : "", paragraphs: [...paragraphs, ...questions] };
+}

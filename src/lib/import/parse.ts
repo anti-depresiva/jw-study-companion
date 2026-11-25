@@ -289,9 +289,17 @@ const ENDS_AS_QUESTION = /\?(\s*\([^)]*\))*\s*\.?\s*$/;
  * Fließtext wird als Absätze ohne Frage übernommen, jede Frage als eigener Eintrag mit Antwortfeld.
  */
 export function parseChapterMaterial(raw: string): ParsedMaterial {
+  // Absätze sind durch Leerzeilen getrennt; hart umbrochene Zeilen innerhalb eines Absatzes zusammenfügen
   const lines = normalizeImportText(raw)
-    .split("\n")
-    .map((l) => l.trim())
+    .split(/\n\s*\n/)
+    .flatMap((block) => {
+      const parts = block
+        .split("\n")
+        .map((l) => l.replace(/\*\*|__/g, "").trim())
+        .filter(Boolean);
+      const wrapped = parts.length > 1 && parts.every((l) => l.length <= 100) && !parts.some((l) => ANSWER_FIELD.test(l));
+      return wrapped ? [parts.join(" ")] : parts;
+    })
     .filter(Boolean);
   const title = lines.slice(0, 6).find((l) => l.length >= 3 && l.length <= 100 && !/^Gedruckte Ausgabe$/i.test(l)) ?? "";
 

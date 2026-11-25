@@ -9,7 +9,7 @@ import { aiEnabled, configureAi, friendlyError, model } from "@/lib/ai/client";
 import { cleanFetchedText, fetchJwPage, findCongregationStudyUrl, findStudyArticleUrl, findWorkbookWeekUrl, paragraphRange } from "@/lib/ai/wol";
 import { wolMeetingsUrl } from "@/lib/sources/links";
 import { findReferences } from "@/lib/references";
-import { extractArticleWithAi, extractWorkbookWithAi } from "@/lib/ai/extract";
+import { extractArticleWithAi, extractMaterialWithAi, extractWorkbookWithAi } from "@/lib/ai/extract";
 import { store } from "@/lib/data";
 import { parseChapterMaterial, parseWatchtowerText, parseWorkbookText, type ParsedArticle, type ParsedWorkbook } from "@/lib/import/parse";
 import { contentHash, normalizeImportText } from "@/lib/import/text";
@@ -510,7 +510,7 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
   if (cbs && cbsUrl) {
     opts.onStep?.("Lade das Versammlungsbibelstudium …");
     try {
-      material = await loadStudyMaterial(cbsUrl, `${cbs.title}\n${cbs.originalText}`, range);
+      material = await loadStudyMaterial(cbsUrl, `${cbs.title}\n${cbs.originalText}`);
       if (!material) notes.push("Im Stoff für das Versammlungsbibelstudium wurden keine Absätze erkannt.");
     } catch (err) {
       notes.push(`Versammlungsbibelstudium: ${friendlyError(err)}`);
@@ -579,14 +579,15 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
 }
 
 /** Lädt verlinkten Stoff (Originaltext) und nimmt nur den angegebenen Absatzbereich („Abs. 1-7“). */
-async function loadStudyMaterial(url: string, itemText: string, range: ReturnType<typeof weekRange>): Promise<StudyMaterial | null> {
+async function loadStudyMaterial(url: string, itemText: string): Promise<StudyMaterial | null> {
   const page = await fetchJwPage(url);
   const text = normalizeImportText(cleanFetchedText(page.text));
   const pageTitle = page.title?.split(/\s+[—–-]\s+Wachtturm ONLINE-BIBLIOTHEK/i)[0].trim() || null;
 
   // 1) Nummerierte Absätze mit Fragen (Studienartikel, Bücher mit Absatzfragen)
   const numbered = parseWatchtowerText(text);
-  if (numbered.paragraphs.filter((p) => p.question).length >= 2) {
+  const withQuestion = numbered.paragraphs.filter((p) => p.question).length;
+  if (withQuestion >= 2 && withQuestion * 2 >= numbered.paragraphs.length) {
     let paragraphs = numbered.paragraphs;
     const r = paragraphRange(itemText);
     if (r) {
@@ -610,13 +611,16 @@ async function loadStudyMaterial(url: string, itemText: string, range: ReturnTyp
   }
 
   // 3) Notfalls von der KI strukturieren lassen (wörtlich geprüft)
-  const ai = await extractArticleWithAi(text, range);
-  if (!ai.paragraphs.length) return null;
-  return {
-    title: ai.title || pageTitle || "Studienmaterial",
-    url: page.url,
-    paragraphs: ai.paragraphs.slice(0, 80).map((p) => ({ number: p.number, question: p.question ?? "", text: p.originalText })),
-  };
+  const ai = await extractMaterialWithAi(text);
+  if (ai.paragraphs.some((p) => p.text)) {
+    return { title: pageTitle || ai.title || "Studienmaterial", url: page.url, paragraphs: ai.paragraphs.slice(0, 120) };
+  }
+  // 4) Wenigstens den Text übernehmen
+  if (chapter.paragraphs.some((p) => p.text)) {
+    return { title: pageTitle || chapter.title || "Studienmaterial", url: page.url, paragraphs: chapter.paragraphs.slice(0, 120) };
+  }
+  const found = chapter.paragraphs.filter((p) => p.question).length;
+  throw new UserError(`Im Stoff wurden keine Absätze erkannt (${text.length} Zeichen Text, ${found} Fragen gefunden, Seite: ${pageTitle ?? page.url}).`);
 }
 
 /* ── Textmarker ──────────────────────────────────────────────────── */
