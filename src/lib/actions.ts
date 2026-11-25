@@ -6,7 +6,7 @@ import { z } from "zod";
 import { generateAnswerSet, generateComments, generateFieldAnswers } from "@/lib/ai/answers";
 import { askAssistant, lookupReference as lookupReferenceAi, type ChatTurn } from "@/lib/ai/assistant";
 import { aiEnabled, configureAi, friendlyError, model } from "@/lib/ai/client";
-import { cleanFetchedText, fetchJwPage, findCongregationStudyUrl, findStudyArticleUrl, paragraphRange } from "@/lib/ai/wol";
+import { cleanFetchedText, fetchJwPage, findCongregationStudyUrl, findStudyArticleUrl, findWorkbookWeekUrl, paragraphRange } from "@/lib/ai/wol";
 import { wolMeetingsUrl } from "@/lib/sources/links";
 import { findReferences } from "@/lib/references";
 import { extractArticleWithAi, extractWorkbookWithAi } from "@/lib/ai/extract";
@@ -479,10 +479,24 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
   opts.onStep?.("Lade die Woche aus der Online-Bibliothek …");
   const meetingsUrl = wolMeetingsUrl(year, isoWeek);
   const page = await fetchJwPage(meetingsUrl);
-  const text = normalizeImportText(cleanFetchedText(page.text));
+  let wbPage = page;
+  let text = normalizeImportText(cleanFetchedText(page.text));
+  let workbook = parseWorkbookText(text);
+
+  // Die Wochenseite zeigt oft nur Links – das Programm steht auf der verlinkten Arbeitsheft-Woche
+  const workbookUrl = workbook.items.length < 3 ? findWorkbookWeekUrl(page.text, page.url) : null;
+  if (workbookUrl) {
+    opts.onStep?.("Lade das Arbeitsheft-Programm …");
+    try {
+      wbPage = await fetchJwPage(workbookUrl);
+      text = normalizeImportText(cleanFetchedText(wbPage.text));
+      workbook = parseWorkbookText(text);
+    } catch (err) {
+      notes.push(`Arbeitsheft-Woche: ${friendlyError(err)}`);
+    }
+  }
   if (text.length < 300) throw new UserError("Die Seite der Online-Bibliothek enthielt keinen verwertbaren Text.");
 
-  let workbook = parseWorkbookText(text);
   if (workbook.items.length < 3 || workbook.items.length > 15) {
     opts.onStep?.("Strukturiere das Wochenprogramm …");
     workbook = await extractWorkbookWithAi(text, range);
@@ -492,7 +506,7 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
   // Versammlungsbibelstudium: verlinkten Stoff dazuladen
   const cbs = workbook.items.find((i) => i.section === "versammlungsbibelstudium" || /Versammlungsbibelstudium/i.test(i.title));
   let material: StudyMaterial | null = null;
-  const cbsUrl = cbs ? findCongregationStudyUrl(page.text, page.url) : null;
+  const cbsUrl = cbs ? (findCongregationStudyUrl(wbPage.text, wbPage.url) ?? findCongregationStudyUrl(page.text, page.url)) : null;
   if (cbs && cbsUrl) {
     opts.onStep?.("Lade das Versammlungsbibelstudium …");
     try {
@@ -512,7 +526,7 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
       kind: "workbook",
       origin: "wol",
       contentHash: await contentHash(text),
-      sourceUrl: page.url,
+      sourceUrl: wbPage.url,
       overwrite: true,
       data: {
         title: `Woche ${formatRange(range.start, range.end)}`,

@@ -112,6 +112,19 @@ export function findCongregationStudyUrl(raw: string, base: string): string | nu
   return null;
 }
 
+/** Link auf die Arbeitsheft-Woche (Dokumentnummer mit 9 Stellen, z. B. 202026405). */
+export function findWorkbookWeekUrl(md: string, base: string): string | null {
+  for (const m of md.matchAll(/\(([^)\s]*\/wol\/d\/r\d+\/lp-\w+\/\d{9})(?:[/?#][^)\s]*)?\)/g)) {
+    try {
+      const abs = new URL(m[1], base).toString();
+      if (checkOfficialUrl(abs).ok) return abs;
+    } catch {
+      /* ungültiger Link */
+    }
+  }
+  return null;
+}
+
 /** „Abs. 1-7“ / „Abs. 8–14“ im Programmpunkt → Absatzbereich */
 export function paragraphRange(text: string): [number, number] | null {
   const m = text.match(/Abs\.\s*(\d+)\s*[-–]\s*(\d+)/);

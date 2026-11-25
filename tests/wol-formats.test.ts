@@ -3,6 +3,7 @@ import {
   cleanFetchedText,
   findCongregationStudyUrl,
   findStudyArticleUrl,
+  findWorkbookWeekUrl,
 } from "@/lib/ai/wol";
 import { parseChapterMaterial, parseWatchtowerText } from "@/lib/import/parse";
 
@@ -110,5 +111,17 @@ describe("Links der Online-Bibliothek", () => {
         "https://wol.jw.org/de/wol/meetings/r10/lp-x/2026/49",
       ),
     ).toBe("https://wol.jw.org/de/wol/d/r10/lp-x/2026566");
+  });
+});
+
+describe("Arbeitsheft-Woche auf der Wochenseite", () => {
+  it("findet den Link zur Arbeitsheft-Woche (9-stellige Nummer)", () => {
+    const md = `[Leben und Dienst](/de/wol/library/r10/lp-x/arbeitshefte/november)\n\n[![Bild](/de/wol/d/r10/lp-x/202026405/thumbnail)](/de/wol/d/r10/lp-x/202026405)\n\n[Wachtturm](/de/wol/d/r10/lp-x/2026566)`;
+    expect(
+      findWorkbookWeekUrl(
+        md,
+        "https://wol.jw.org/de/wol/meetings/r10/lp-x/2026/49",
+      ),
+    ).toBe("https://wol.jw.org/de/wol/d/r10/lp-x/202026405");
   });
 });
