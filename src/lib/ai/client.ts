@@ -61,6 +61,27 @@ export interface StructuredRequest<T extends z.ZodType> {
   followUps?: BetaMessageParam[];
 }
 
+/** Von der API im Antwortschema nicht unterstützte Angaben (Zod prüft sie danach trotzdem). */
+const UNSUPPORTED = new Set(["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "maxItems", "pattern"]);
+
+function stripUnsupported(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripUnsupported);
+  if (!node || typeof node !== "object") return node;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(node)) {
+    if (UNSUPPORTED.has(k)) continue;
+    // minItems nur mit 0 oder 1 erlaubt
+    if (k === "minItems" && typeof v === "number" && v > 1) continue;
+    out[k] = stripUnsupported(v);
+  }
+  return out;
+}
+
+/** JSON-Schema für output_config.format – ohne Grenzen, die die API ablehnt (z. B. bei .int()). */
+export function apiSchema(schema: z.ZodType): Record<string, unknown> {
+  return stripUnsupported(z.toJSONSchema(schema, { target: "draft-7" })) as Record<string, unknown>;
+}
+
 /**
  * Strukturierte Ausgabe (JSON-Schema) mit Streaming, Prompt-Caching und
  * server-seitigem Fallback. Das Ergebnis wird zusätzlich mit Zod validiert.
@@ -80,7 +101,7 @@ export async function structured<T extends z.ZodType>(req: StructuredRequest<T>)
     system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
     output_config: {
       effort: req.effort ?? "medium",
-      format: { type: "json_schema", schema: z.toJSONSchema(req.schema, { target: "draft-7" }) as Record<string, unknown> },
+      format: { type: "json_schema", schema: apiSchema(req.schema) },
     },
     messages: [{ role: "user", content }, ...(req.followUps ?? [])],
   });
