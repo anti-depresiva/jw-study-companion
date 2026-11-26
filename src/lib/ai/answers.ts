@@ -138,9 +138,10 @@ export async function generateFieldAnswers(t: ResolvedTarget, settings: Settings
     prompt: `Aufgabe: Beantworte für den Programmpunkt ${t.item.position} „${t.item.title}“ jede der folgenden Fragen einzeln – so, wie man sie bei der Zusammenkunft kurz kommentieren würde (${length} Wörter, natürlich formuliert).
 ${t.item.questions.map((q, i) => `${i}: ${q}`).join("\n")}
 
-Regeln: Antworte nur auf Grundlage des Studienmaterials. Bei persönlichen Fragen, die nur der Benutzer selbst beantworten kann (z. B. „Was hast du beim Bibellesen entdeckt?“), setze grounded = false und answer = "". Nenne nur Bibelstellen aus dieser Liste: ${allowed.map((a) => a.label).join("; ") || "keine"}.${translationNote(settings)}`,
+Regeln: Antworte nur auf Grundlage des Studienmaterials (Programmpunkt und ggf. „Studienmaterial“ mit Kapiteltext). Auch Anwendungsfragen („Wie können wir …?“, „Was lerne ich daraus über Jehova?“) beantwortest du mit Gedanken aus dem Material. Verweist eine Frage auf eine andere Veröffentlichung (z. B. „it ‚Jephtha‘ Abs. 6“), beantworte sie, soweit es das vorliegende Material erlaubt. Nur bei rein persönlichen Fragen, die allein der Benutzer beantworten kann (z. B. „Was hast du beim Bibellesen entdeckt?“, „Was möchte ich … fragen?“), setze grounded = false und answer = "". Nenne nur Bibelstellen aus dieser Liste: ${allowed.map((a) => a.label).join("; ") || "keine"}.${translationNote(settings)}`,
     schema: FieldsSchema,
-    maxTokens: 6000,
+    // Viele Fragen (z. B. Versammlungsbibelstudium mit 10+ Fragen) plus Nachdenken brauchen Platz
+    maxTokens: 32000,
   });
   const answers = t.item.questions.map((_, i) => {
     const a = out.answers.find((x) => x.index === i);

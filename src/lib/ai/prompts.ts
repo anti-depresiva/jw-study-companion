@@ -1,5 +1,5 @@
 import type { Article, CommentLength, Paragraph, Settings, Workbook, WorkbookItem } from "@/lib/types";
-import { SECTION_TITLES } from "@/lib/types";
+import { itemFullText, SECTION_TITLES } from "@/lib/types";
 
 export const SYSTEM_PROMPT = `Du bist ein sorgfältiger Studienassistent für die persönliche Vorbereitung auf die wöchentlichen Zusammenkünfte von Jehovas Zeugen. Du arbeitest in einer inoffiziellen Studien-App und antwortest immer auf Deutsch.
 
@@ -45,7 +45,7 @@ export function workbookContext(workbook: Workbook): string {
     "",
     ...workbook.items.map(
       (it) =>
-        `<programmpunkt id="${it.position}" teil="${SECTION_TITLES[it.section]}">\n${it.title}${it.duration ? ` (${it.duration})` : ""}\n${it.originalText}\n</programmpunkt>`,
+        `<programmpunkt id="${it.position}" teil="${SECTION_TITLES[it.section]}">\n${it.title}${it.duration ? ` (${it.duration})` : ""}\n${itemFullText(it)}\n</programmpunkt>`,
     ),
   ]
     .filter((x) => x !== "")
