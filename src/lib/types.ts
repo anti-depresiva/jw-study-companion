@@ -104,6 +104,14 @@ export interface WorkbookItem {
   scriptures: string[];
   /** Studienmaterial (z. B. Versammlungsbibelstudium), von der verlinkten WOL-Seite geladen */
   material?: StudyMaterial | null;
+  /** Verweise im Text (z. B. „th Lektion 2“, Bibelstellen) mit Link in die Online-Bibliothek */
+  links?: RefLink[];
+}
+
+/** Verweis mit Link auf wol.jw.org / jw.org */
+export interface RefLink {
+  label: string;
+  url: string;
 }
 
 /** Verlinktes Studienmaterial eines Programmpunkts – Originaltext von wol.jw.org. */
@@ -111,6 +119,8 @@ export interface StudyMaterial {
   title: string;
   url: string;
   paragraphs: Array<{ number: string; question: string; text: string }>;
+  /** Verweise in den Fragen des Stoffs (z. B. „it ‚Jephtha‘ Abs. 6“) */
+  links?: RefLink[];
 }
 
 /** Alle Fragen eines Programmpunkts – eigene Fragen, dann die Fragen des Studienmaterials. */

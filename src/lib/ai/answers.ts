@@ -1,4 +1,3 @@
-
 import { z } from "zod";
 import type { Store } from "@/lib/data/store";
 import { scriptureLabels } from "@/lib/scripture";
@@ -50,7 +49,13 @@ export async function generateAnswerSet(store: Store, t: ResolvedTarget, setting
   const allowedLabels = allowed.map((a) => a.label);
   const prompt = t.type === "paragraph" ? paragraphTask(t.paragraph, settings, allowedLabels) : workbookTask(t.item, settings, allowedLabels);
 
-  const base = { system: SYSTEM_PROMPT, context: contextFor(t), prompt, schema: AnswerSchema, maxTokens: 8000 };
+  const base = {
+    system: SYSTEM_PROMPT,
+    context: contextFor(t),
+    prompt,
+    schema: AnswerSchema,
+    maxTokens: 8000,
+  };
   let out = await structured(base);
   let check = checkGrounding([out.short, out.detailed, out.personal, out.extra_thought], allowed);
   if (!check.ok) {
@@ -98,7 +103,13 @@ export async function generateComments(store: Store, t: ResolvedTarget, settings
   const out = await structured({
     system: SYSTEM_PROMPT,
     context: contextFor(t),
-    prompt: commentsTask(t.label, t.question, settings, allowed.map((a) => a.label), prior),
+    prompt: commentsTask(
+      t.label,
+      t.question,
+      settings,
+      allowed.map((a) => a.label),
+      prior,
+    ),
     schema: CommentsSchema,
     maxTokens: 8000,
   });
@@ -116,29 +127,61 @@ export async function generateComments(store: Store, t: ResolvedTarget, settings
     };
   });
 
-  return store.saveAnswer({ ...existing, extraComments: [...existing.extraComments, ...comments], warnings: [...warnings] });
+  return store.saveAnswer({
+    ...existing,
+    extraComments: [...existing.extraComments, ...comments],
+    warnings: [...warnings],
+  });
 }
 
 const FieldsSchema = z.strictObject({
-  answers: z.array(z.strictObject({ index: z.number().int(), grounded: z.boolean(), answer: z.string() })),
+  answers: z.array(
+    z.strictObject({
+      index: z.number().int(),
+      grounded: z.boolean(),
+      answer: z.string(),
+    }),
+  ),
 });
+
+/** Originaltext einer verlinkten Stelle (Veröffentlichung oder Bibeltext) von jw.org. */
+export interface ReferenceText {
+  label: string;
+  url: string;
+  text: string;
+}
 
 /**
  * Füllt die Antwortfelder eines Programmpunkts: je Frage eine kurze, natürliche Antwort.
- * Persönliche Fragen ohne Grundlage im Material bleiben leer (zum selbst Ausfüllen).
+ * Grundlage sind das Studienmaterial und die verlinkten Verweise (von jw.org abgerufen).
+ * Persönliche Fragen werden in der Ich-Form als Vorschlag beantwortet.
  */
-export async function generateFieldAnswers(t: ResolvedTarget, settings: Settings): Promise<{ answers: string[]; warnings: string[] }> {
+export async function generateFieldAnswers(
+  t: ResolvedTarget,
+  settings: Settings,
+  refs: ReferenceText[] = [],
+): Promise<{ answers: string[]; warnings: string[] }> {
   assertSourceReady(t);
   if (t.type !== "workbook_item" || t.item.questions.length === 0) return { answers: [], warnings: [] };
-  const allowed = allowedFor(t);
+  const allowed = allowedRefs(t.item.originalText, t.item.title, t.workbook.bibleReading, ...refs.map((r) => r.text));
   const length = settings.commentLength === "kurz" ? "15–30" : settings.commentLength === "lang" ? "35–60" : "25–45";
+  const refContext = refs.length
+    ? `\n\nVERWEISE (Originaltext der im Programmpunkt verlinkten Stellen von jw.org):\n${refs
+        .map((r) => `<verweis titel="${r.label.replace(/"/g, "'")}" url="${r.url}">\n${r.text}\n</verweis>`)
+        .join("\n")}`
+    : "";
   const out = await structured({
     system: SYSTEM_PROMPT,
-    context: contextFor(t),
+    context: contextFor(t) + refContext,
     prompt: `Aufgabe: Beantworte für den Programmpunkt ${t.item.position} „${t.item.title}“ jede der folgenden Fragen einzeln – so, wie man sie bei der Zusammenkunft kurz kommentieren würde (${length} Wörter, natürlich formuliert).
 ${t.item.questions.map((q, i) => `${i}: ${q}`).join("\n")}
 
-Regeln: Antworte nur auf Grundlage des Studienmaterials (Programmpunkt und ggf. „Studienmaterial“ mit Kapiteltext). Auch Anwendungsfragen („Wie können wir …?“, „Was lerne ich daraus über Jehova?“) beantwortest du mit Gedanken aus dem Material. Verweist eine Frage auf eine andere Veröffentlichung (z. B. „it ‚Jephtha‘ Abs. 6“), beantworte sie, soweit es das vorliegende Material erlaubt. Nur bei rein persönlichen Fragen, die allein der Benutzer beantworten kann (z. B. „Was hast du beim Bibellesen entdeckt?“, „Was möchte ich … fragen?“), setze grounded = false und answer = "". Nenne nur Bibelstellen aus dieser Liste: ${allowed.map((a) => a.label).join("; ") || "keine"}.${translationNote(settings)}`,
+Regeln:
+- Grundlage sind das Studienmaterial (Programmpunkt und ggf. „Studienmaterial“ mit Kapiteltext) und die VERWEISE. Verweist eine Frage auf eine Stelle (z. B. „it ‚Jephtha‘ Abs. 6“, „th Lektion 2“), nutze vor allem den Text dieses Verweises.
+- Anwendungsfragen („Wie können wir …?“, „Was lerne ich daraus über Jehova?“) beantwortest du mit Gedanken aus dem Material.
+- Persönliche Fragen („Was hast du beim Bibellesen entdeckt?“, „Was möchte ich … fragen?“) beantwortest du persönlich in der Ich-Form – als natürlicher, ehrlicher Vorschlag, gestützt auf den Bibeltext bzw. das Material (keine erfundenen Erlebnisse, Namen oder Orte). grounded = true.
+- grounded = false und answer = "" nur, wenn das Material wirklich nichts dazu hergibt.
+- Nenne nur Bibelstellen aus dieser Liste: ${allowed.map((a) => a.label).join("; ") || "keine"}.${translationNote(settings)}`,
     schema: FieldsSchema,
     // Viele Fragen (z. B. Versammlungsbibelstudium mit 10+ Fragen) plus Nachdenken brauchen Platz
     maxTokens: 32000,

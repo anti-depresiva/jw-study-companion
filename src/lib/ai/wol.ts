@@ -6,6 +6,7 @@
  */
 import type { BetaMessage, BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { checkOfficialUrl } from "@/lib/sources/domain";
+import type { RefLink } from "@/lib/types";
 import { assertUsable, FALLBACK_BETA, getClient, model } from "./client";
 import { jwFetchTool } from "./assistant";
 
@@ -67,7 +68,11 @@ export async function fetchJwPage(url: string): Promise<FetchedPage> {
     if (!final.ok) throw new WolFetchError("Der Abruf wurde auf eine fremde Seite umgeleitet und verworfen.");
     const source = block.content.content.source;
     if (source.type !== "text") throw new WolFetchError("Die Seite wurde nicht als Text geliefert.");
-    return { url: final.url, title: block.content.content.title, text: source.data };
+    return {
+      url: final.url,
+      title: block.content.content.title,
+      text: source.data,
+    };
   }
   throw new WolFetchError("Die Seite wurde nicht abgerufen.");
 }
@@ -112,6 +117,40 @@ export function findCongregationStudyUrl(raw: string, base: string): string | nu
   return null;
 }
 
+/**
+ * Verweis-Links einer Seite: Veröffentlichungs-Zitate (/wol/pc/), Dokumente (/wol/d/) und
+ * Bibelstellen (/wol/bc/, /wol/b/). Linktext → absolute URL, nur offizielle Adressen.
+ */
+export function extractRefLinks(raw: string, base: string): RefLink[] {
+  const md = raw.replace(/­/g, "");
+  const out = new Map<string, RefLink>();
+  for (const m of md.matchAll(/\[([^\]]+)\]\(([^)\s]+)\)/g)) {
+    const label = m[1]
+      .replace(/!\[[^\]]*\]/g, "")
+      .replace(/\*\*|__/g, "")
+      .replace(/\s+/g, " ")
+      .replace(/^[\s(;,]+|[\s);,.]+$/g, "")
+      .trim();
+    // Lieder und reine Versnummern („10“, „26-28“) sind keine sinnvollen Verweise
+    if (label.length < 4 || label.length > 120 || !/\p{L}/u.test(label) || /^Lied\b/i.test(label)) continue;
+    if (!/\/wol\/(pc|bc|b|d)\//.test(m[2]) || /\/thumbnail\b|#/.test(m[2])) continue;
+    try {
+      const url = new URL(m[2], base).toString();
+      if (!checkOfficialUrl(url).ok || url === base) continue;
+      if (!out.has(label)) out.set(label, { label, url });
+    } catch {
+      /* ungültiger Link */
+    }
+  }
+  return [...out.values()];
+}
+
+/** Verweise, deren Linktext im angegebenen Text vorkommt. */
+export function linksIn(text: string, links: RefLink[]): RefLink[] {
+  const t = text.replace(/\s+/g, " ");
+  return links.filter((l) => t.includes(l.label));
+}
+
 /** Link auf die Arbeitsheft-Woche (Dokumentnummer mit 9 Stellen, z. B. 202026405). */
 export function findWorkbookWeekUrl(md: string, base: string): string | null {
   for (const m of md.matchAll(/\(([^)\s]*\/wol\/d\/r\d+\/lp-\w+\/\d{9})(?:[/?#][^)\s]*)?\)/g)) {
@@ -133,7 +172,10 @@ export function paragraphRange(text: string): [number, number] | null {
 
 /** Link auf den Wachtturm-Studienartikel der Woche aus der Zusammenkünfte-Seite. */
 export function findStudyArticleUrl(md: string, base: string): string | null {
-  const links = [...md.matchAll(/\[([^\]]+)\]\(([^)\s]+)\)/g)].map((m) => ({ text: m[1], href: m[2] }));
+  const links = [...md.matchAll(/\[([^\]]+)\]\(([^)\s]+)\)/g)].map((m) => ({
+    text: m[1],
+    href: m[2],
+  }));
   // Der Studienartikel steht im Abschnitt „Wachtturm-Studium“; Dokumentlinks enthalten /wol/d/
   const idx = md.search(/Wachtturm[- ]Studium|WACHTTURM[- ]STUDIUM/i);
   const after = idx >= 0 ? md.slice(idx) : md;
@@ -152,4 +194,3 @@ export function findStudyArticleUrl(md: string, base: string): string | null {
   }
   return null;
 }
-

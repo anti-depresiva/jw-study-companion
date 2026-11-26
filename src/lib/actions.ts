@@ -3,10 +3,20 @@
  * Daten: IndexedDB (lokal). KI: direkte Anfrage an die Anthropic-API.
  */
 import { z } from "zod";
-import { generateAnswerSet, generateComments, generateFieldAnswers } from "@/lib/ai/answers";
+import { generateAnswerSet, generateComments, generateFieldAnswers, type ReferenceText } from "@/lib/ai/answers";
 import { askAssistant, lookupReference as lookupReferenceAi, type ChatTurn } from "@/lib/ai/assistant";
 import { aiEnabled, configureAi, friendlyError, model } from "@/lib/ai/client";
-import { cleanFetchedText, fetchJwPage, findCongregationStudyUrl, findStudyArticleUrl, findWorkbookWeekUrl, paragraphRange } from "@/lib/ai/wol";
+import {
+  cleanFetchedText,
+  extractRefLinks,
+  fetchJwPage,
+  findCongregationStudyUrl,
+  findStudyArticleUrl,
+  findWorkbookWeekUrl,
+  linksIn,
+  paragraphRange,
+  type FetchedPage,
+} from "@/lib/ai/wol";
 import { wolMeetingsUrl } from "@/lib/sources/links";
 import { findReferences } from "@/lib/references";
 import { extractArticleWithAi, extractMaterialWithAi, extractWorkbookWithAi } from "@/lib/ai/extract";
@@ -17,7 +27,7 @@ import { scriptureLabels } from "@/lib/scripture";
 import { checkOfficialUrl } from "@/lib/sources/domain";
 import { checkWeek, isPreparing, prepareWeekAnswers } from "@/lib/study/prepare";
 import { resolveTarget } from "@/lib/study/targets";
-import type { AnswerSet, Favorite, Highlight, Settings, SourceKind, StudyMaterial, TargetType, Variant } from "@/lib/types";
+import type { AnswerSet, Favorite, Highlight, RefLink, Settings, SourceKind, StudyMaterial, TargetType, Variant, WorkbookItem } from "@/lib/types";
 import { itemQuestions } from "@/lib/types";
 import { currentWeek, formatRange, weekRange } from "@/lib/week";
 import { describeWeeks, splitWatchtowerArticles, splitWorkbookWeeks } from "@/lib/import/split";
@@ -45,7 +55,14 @@ export async function isAiReady() {
 
 /* ── Woche vorbereiten ───────────────────────────────────────────── */
 
-export async function prepareWeek(opts: { year?: number; week?: number; force?: boolean; onProgress?: (weekId: string) => void } = {}) {
+export async function prepareWeek(
+  opts: {
+    year?: number;
+    week?: number;
+    force?: boolean;
+    onProgress?: (weekId: string) => void;
+  } = {},
+) {
   const settings = await withAi();
   const cw = currentWeek();
   const result = await checkWeek(store, opts.year ?? cw.year, opts.week ?? cw.week, { search: settings.useWebSearch });
@@ -78,7 +95,10 @@ export async function generateAnswers(t: Target, mode: "generate" | "regenerate"
       scriptures: previous.scriptures,
       createdAt: now,
     }));
-    answer = await store.saveAnswer({ ...answer, extraComments: [...answer.extraComments, ...kept] });
+    answer = await store.saveAnswer({
+      ...answer,
+      extraComments: [...answer.extraComments, ...kept],
+    });
   }
   notifyChange();
   return answer;
@@ -188,7 +208,11 @@ export interface ImportPreview {
   parsed: ParsedArticle | ParsedWorkbook;
   notes: string[];
   /** Bei Wachtturm-Ausgaben mit mehreren Studienartikeln */
-  articleChoices: Array<{ number: string; title: string; weekLabel: string | null }>;
+  articleChoices: Array<{
+    number: string;
+    title: string;
+    weekLabel: string | null;
+  }>;
 }
 
 export async function previewImport(input: {
@@ -222,7 +246,9 @@ export async function previewImport(input: {
       if (split.text) {
         part = split.text;
         weekBibleReading = split.bibleReading;
-        notes.push(`Die Datei enthält ${split.weeks.length} Wochen – übernommen wird ${label}. Die anderen Wochen kannst du dort mit demselben Text importieren.`);
+        notes.push(
+          `Die Datei enthält ${split.weeks.length} Wochen – übernommen wird ${label}. Die anderen Wochen kannst du dort mit demselben Text importieren.`,
+        );
       } else {
         containsWeek = false;
         if (!aiReady) throw new UserError(`${label} ist in dieser Datei nicht enthalten. Enthalten sind: ${describeWeeks(split.weeks)}.`);
@@ -237,14 +263,15 @@ export async function previewImport(input: {
         weekLabel: c.week ? describeWeeks([c.week]) : null,
       }));
       const chosen =
-        (input.article && cands.find((c) => c.number === input.article)) ||
-        cands.find((c) => c.week?.year === week.year && c.week.week === week.week);
+        (input.article && cands.find((c) => c.number === input.article)) || cands.find((c) => c.week?.year === week.year && c.week.week === week.week);
       if (chosen) {
         part = chosen.text;
         notes.push(`Die Ausgabe enthält ${cands.length} Studienartikel – übernommen wird Studienartikel ${chosen.number}.`);
       } else if (!aiReady) {
         part = cands[0].text;
-        notes.push(`Die Ausgabe enthält ${cands.length} Studienartikel; die Studienwoche wurde nicht automatisch erkannt. Bitte oben den richtigen Artikel wählen.`);
+        notes.push(
+          `Die Ausgabe enthält ${cands.length} Studienartikel; die Studienwoche wurde nicht automatisch erkannt. Bitte oben den richtigen Artikel wählen.`,
+        );
       } else {
         containsWeek = false;
       }
@@ -263,7 +290,9 @@ export async function previewImport(input: {
     parsed = input.kind === "watchtower" ? await extractArticleWithAi(part, range) : await extractWorkbookWithAi(part, range);
     method = "ai";
   } else if (wantAi && poor) {
-    notes.push("Die Struktur wurde nicht sicher erkannt. Mit API-Schlüssel (Einstellungen) erkennt die KI sie zuverlässiger – oder bitte unten prüfen und ergänzen.");
+    notes.push(
+      "Die Struktur wurde nicht sicher erkannt. Mit API-Schlüssel (Einstellungen) erkennt die KI sie zuverlässiger – oder bitte unten prüfen und ergänzen.",
+    );
   }
 
   if (input.kind === "workbook" && method === "heuristic") {
@@ -275,12 +304,23 @@ export async function previewImport(input: {
 
   const items = input.kind === "watchtower" ? (parsed as ParsedArticle).paragraphs.length : (parsed as ParsedWorkbook).items.length;
   if (items > (input.kind === "watchtower" ? 80 : 40)) {
-    throw new UserError("Es wurden ungewöhnlich viele Abschnitte erkannt – vermutlich enthält die Datei mehrere Wochen, deren Datumszeilen nicht gefunden wurden. Bitte nur den Text der gewünschten Woche einfügen.");
+    throw new UserError(
+      "Es wurden ungewöhnlich viele Abschnitte erkannt – vermutlich enthält die Datei mehrere Wochen, deren Datumszeilen nicht gefunden wurden. Bitte nur den Text der gewünschten Woche einfügen.",
+    );
   }
 
   const hash = await contentHash(part);
   const duplicate = (await store.listSources(week.id)).some((s) => s.contentHash === hash);
-  return { method, origin: "text", chars: part.length, contentHash: hash, duplicate, parsed, notes, articleChoices };
+  return {
+    method,
+    origin: "text",
+    chars: part.length,
+    contentHash: hash,
+    duplicate,
+    parsed,
+    notes,
+    articleChoices,
+  };
 }
 
 const s = (max: number) => z.string().max(max);
@@ -294,7 +334,16 @@ const ArticleData = z.object({
   themeScripture: opt(1000),
   song: opt(200),
   intro: opt(3000),
-  paragraphs: z.array(z.object({ number: s(10).min(1), originalText: s(20000).min(1), question: s(2000) })).min(1, "Mindestens ein Absatz").max(80, "Zu viele Absätze (max. 80) – bitte nur einen Studienartikel importieren."),
+  paragraphs: z
+    .array(
+      z.object({
+        number: s(10).min(1),
+        originalText: s(20000).min(1),
+        question: s(2000),
+      }),
+    )
+    .min(1, "Mindestens ein Absatz")
+    .max(80, "Zu viele Absätze (max. 80) – bitte nur einen Studienartikel importieren."),
 });
 
 const WorkbookData = z.object({
@@ -312,9 +361,17 @@ const WorkbookData = z.object({
           .object({
             title: s(300),
             url: s(500),
-            paragraphs: z.array(z.object({ number: s(10), question: s(2000), text: s(20000) })).max(80),
+            paragraphs: z.array(z.object({ number: s(10), question: s(2000), text: s(20000) })).max(120),
+            links: z
+              .array(z.object({ label: s(200), url: s(500) }))
+              .max(60)
+              .optional(),
           })
           .nullable()
+          .optional(),
+        links: z
+          .array(z.object({ label: s(200), url: s(500) }))
+          .max(60)
           .optional(),
       }),
     )
@@ -354,7 +411,10 @@ export async function saveImport(input: {
   const verification = input.origin === "wol" ? ("verified_link" as const) : ("user_import" as const);
   if (input.origin === "wol" && url) {
     for (const x of sources.filter((x) => x.url === url && x.verification === "unverified_pattern")) {
-      await store.updateSource(x.id, { verification: "verified_link", note: "Seite erfolgreich abgerufen." });
+      await store.updateSource(x.id, {
+        verification: "verified_link",
+        note: "Seite erfolgreich abgerufen.",
+      });
     }
   }
 
@@ -417,7 +477,8 @@ export async function saveImport(input: {
         originalText: it.originalText.trim(),
         questions: it.questions.map((q) => q.trim()).filter(Boolean),
         scriptures: scriptureLabels(`${it.title}\n${it.originalText}`),
-        material: it.material && checkOfficialUrl(it.material.url).ok ? it.material : null,
+        material: it.material && checkOfficialUrl(it.material.url).ok ? { ...it.material, links: officialLinks(it.material.links) } : null,
+        links: officialLinks(it.links),
       })),
     });
   }
@@ -464,7 +525,11 @@ export interface WolImportResult {
  * Lädt die Zusammenkünfte-Seite der Woche aus der Online-Bibliothek und den dort
  * verlinkten Wachtturm-Studienartikel. Übernommen wird der Originaltext der Seiten.
  */
-export async function importFromWol(year: number, isoWeek: number, opts: { overwrite?: boolean; onStep?: (msg: string) => void } = {}): Promise<WolImportResult> {
+export async function importFromWol(
+  year: number,
+  isoWeek: number,
+  opts: { overwrite?: boolean; onStep?: (msg: string) => void } = {},
+): Promise<WolImportResult> {
   await withAi();
   if (!aiEnabled()) throw new UserError("Für das Laden von wol.jw.org wird der Anthropic-API-Schlüssel benötigt (Einstellungen).");
   const week = await store.ensureWeek(year, isoWeek);
@@ -520,6 +585,7 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
   }
 
   let workbookItems = 0;
+  const pageLinks = [...extractRefLinks(wbPage.text, wbPage.url), ...(wbPage === page ? [] : extractRefLinks(page.text, page.url))];
   if (workbook.items.length) {
     await saveImport({
       weekId: week.id,
@@ -531,7 +597,12 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
       data: {
         title: `Woche ${formatRange(range.start, range.end)}`,
         bibleReading: header.bibleReading ?? workbook.bibleReading,
-        items: workbook.items.map((it) => ({ ...it, duration: it.duration ?? null, material: it === cbs ? material : null })),
+        items: workbook.items.map((it) => ({
+          ...it,
+          duration: it.duration ?? null,
+          material: it === cbs ? material : null,
+          links: itemLinks(it, pageLinks, header.bibleReading ?? workbook.bibleReading),
+        })),
       },
     });
     workbookItems = workbook.items.length;
@@ -561,7 +632,12 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
           contentHash: await contentHash(artText),
           sourceUrl: art.url,
           overwrite: true,
-          data: { ...article, title: article.title || art.title || "Wachtturm-Studienartikel", issue: null, publishedAt: null },
+          data: {
+            ...article,
+            title: article.title || art.title || "Wachtturm-Studienartikel",
+            issue: null,
+            publishedAt: null,
+          },
         });
         paragraphs = article.paragraphs.length;
         articleTitle = article.title || art.title;
@@ -578,9 +654,30 @@ export async function importFromWol(year: number, isoWeek: number, opts: { overw
   return { workbookItems, paragraphs, articleTitle, notes };
 }
 
+const officialLinks = (links: RefLink[] | undefined) => (links ?? []).filter((l) => checkOfficialUrl(l.url).ok);
+
+/** Verweise eines Programmpunkts; bei „Was hast du beim Bibellesen entdeckt?“ auch das Bibelleseprogramm. */
+function itemLinks(it: { title: string; originalText: string; questions: string[] }, links: RefLink[], bibleReading: string | null): RefLink[] {
+  const own = linksIn(`${it.title}\n${it.originalText}`, links);
+  const reading =
+    bibleReading && it.questions.some((q) => /Bibellesen/i.test(q)) ? links.filter((l) => l.label.toLowerCase() === bibleReading.toLowerCase().trim()) : [];
+  return [...new Map([...reading, ...own].map((l) => [l.url, l])).values()].slice(0, 20);
+}
+
 /** Lädt verlinkten Stoff (Originaltext) und nimmt nur den angegebenen Absatzbereich („Abs. 1-7“). */
 async function loadStudyMaterial(url: string, itemText: string): Promise<StudyMaterial | null> {
   const page = await fetchJwPage(url);
+  const material = await materialFromPage(page, itemText);
+  if (!material) return null;
+  // Verweise in den Fragen (z. B. „it ‚Jephtha‘ Abs. 6“) für das Ausfüllen merken
+  const questions = material.paragraphs.map((p) => p.question).join("\n");
+  return {
+    ...material,
+    links: linksIn(normalizeImportText(questions), extractRefLinks(page.text, page.url)).slice(0, 40),
+  };
+}
+
+async function materialFromPage(page: FetchedPage, itemText: string): Promise<StudyMaterial | null> {
   const text = normalizeImportText(cleanFetchedText(page.text));
   const pageTitle = page.title?.split(/\s+[—–-]\s+Wachtturm ONLINE-BIBLIOTHEK/i)[0].trim() || null;
 
@@ -600,24 +697,40 @@ async function loadStudyMaterial(url: string, itemText: string): Promise<StudyMa
     return {
       title: numbered.title || pageTitle || "Studienmaterial",
       url: page.url,
-      paragraphs: paragraphs.slice(0, 80).map((p) => ({ number: p.number, question: p.question ?? "", text: p.originalText })),
+      paragraphs: paragraphs.slice(0, 80).map((p) => ({
+        number: p.number,
+        question: p.question ?? "",
+        text: p.originalText,
+      })),
     };
   }
 
   // 2) Kapitel ohne Absatznummern (Erzählung, danach Fragen zum Besprechen)
   const chapter = parseChapterMaterial(text);
   if (chapter.paragraphs.some((p) => p.question) && chapter.paragraphs.some((p) => p.text)) {
-    return { title: pageTitle || chapter.title || "Studienmaterial", url: page.url, paragraphs: chapter.paragraphs.slice(0, 120) };
+    return {
+      title: pageTitle || chapter.title || "Studienmaterial",
+      url: page.url,
+      paragraphs: chapter.paragraphs.slice(0, 120),
+    };
   }
 
   // 3) Notfalls von der KI strukturieren lassen (wörtlich geprüft)
   const ai = await extractMaterialWithAi(text);
   if (ai.paragraphs.some((p) => p.text)) {
-    return { title: pageTitle || ai.title || "Studienmaterial", url: page.url, paragraphs: ai.paragraphs.slice(0, 120) };
+    return {
+      title: pageTitle || ai.title || "Studienmaterial",
+      url: page.url,
+      paragraphs: ai.paragraphs.slice(0, 120),
+    };
   }
   // 4) Wenigstens den Text übernehmen
   if (chapter.paragraphs.some((p) => p.text)) {
-    return { title: pageTitle || chapter.title || "Studienmaterial", url: page.url, paragraphs: chapter.paragraphs.slice(0, 120) };
+    return {
+      title: pageTitle || chapter.title || "Studienmaterial",
+      url: page.url,
+      paragraphs: chapter.paragraphs.slice(0, 120),
+    };
   }
   const found = chapter.paragraphs.filter((p) => p.question).length;
   throw new UserError(`Im Stoff wurden keine Absätze erkannt (${text.length} Zeichen Text, ${found} Fragen gefunden, Seite: ${pageTitle ?? page.url}).`);
@@ -666,7 +779,8 @@ export async function fillFields(t: Target, opts: { replaceAi?: boolean } = {}):
 
   const open = target.item.questions.map((_, i) => i).filter((i) => !keep(i));
   if (open.length === 0) return 0;
-  const { answers } = await generateFieldAnswers(target, settings);
+  const refs = await referenceTexts(target.item);
+  const { answers } = await generateFieldAnswers(target, settings, refs);
   for (const i of open) {
     if (!answers[i]) continue;
     await store.saveField({ ...t, index: i, text: answers[i], origin: "ai" });
@@ -675,14 +789,56 @@ export async function fillFields(t: Target, opts: { replaceAi?: boolean } = {}):
   return filled;
 }
 
+/** Bereits abgerufene Verweise (für die Dauer der Sitzung, nur im Arbeitsspeicher) */
+const refCache = new Map<string, Promise<string | null>>();
+const MAX_REFS = 8;
+const MAX_REF_CHARS = 8000;
+
+/**
+ * Ruft die verlinkten Verweise eines Programmpunkts von jw.org ab (Veröffentlichungen zuerst,
+ * dann Bibeltexte). Fehlgeschlagene Abrufe werden übersprungen.
+ */
+async function referenceTexts(item: WorkbookItem): Promise<ReferenceText[]> {
+  const all = [...(item.material?.links ?? []), ...(item.links ?? [])].filter((l) => checkOfficialUrl(l.url).ok);
+  const unique = [...new Map(all.map((l) => [l.url, l])).values()];
+  const pick = [...unique.filter((l) => !/\/wol\/bc?\//.test(l.url)), ...unique.filter((l) => /\/wol\/bc?\//.test(l.url))].slice(0, MAX_REFS);
+  const texts = await Promise.all(
+    pick.map(async (l) => {
+      if (!refCache.has(l.url)) {
+        refCache.set(
+          l.url,
+          fetchJwPage(l.url)
+            .then((p) => normalizeImportText(cleanFetchedText(p.text)).slice(0, MAX_REF_CHARS))
+            .catch(() => null),
+        );
+      }
+      const text = await refCache.get(l.url)!;
+      return text ? { label: l.label, url: l.url, text } : null;
+    }),
+  );
+  return texts.filter((x): x is ReferenceText => x !== null);
+}
+
 /** „Alle Felder ausfüllen“ für die ganze Woche (läuft auf dem Gerät, App geöffnet lassen). */
 export async function fillWeekFields(weekId: string, onProgress?: (done: number, total: number) => void) {
   await withAi();
   if (!aiEnabled()) throw new UserError("Für das Ausfüllen wird der Anthropic-API-Schlüssel benötigt (Einstellungen).");
   const [article, workbook] = await Promise.all([store.getArticle(weekId), store.getWorkbook(weekId)]);
   const targets: Target[] = [
-    ...(workbook?.items ?? []).filter((i) => itemQuestions(i).length).map((i) => ({ weekId, targetType: "workbook_item" as const, targetId: i.id })),
-    ...(article?.paragraphs ?? []).filter((p) => p.question).map((p) => ({ weekId, targetType: "paragraph" as const, targetId: p.id })),
+    ...(workbook?.items ?? [])
+      .filter((i) => itemQuestions(i).length)
+      .map((i) => ({
+        weekId,
+        targetType: "workbook_item" as const,
+        targetId: i.id,
+      })),
+    ...(article?.paragraphs ?? [])
+      .filter((p) => p.question)
+      .map((p) => ({
+        weekId,
+        targetType: "paragraph" as const,
+        targetId: p.id,
+      })),
   ];
   let done = 0;
   const errors: string[] = [];
