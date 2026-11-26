@@ -104,7 +104,12 @@ export function describeAiError(err: unknown): { message: string; status: number
   if (err instanceof Anthropic.AuthenticationError) return { message: "Der Anthropic-API-Schlüssel ist ungültig.", status: 502 };
   if (err instanceof Anthropic.RateLimitError) return { message: "Zu viele KI-Anfragen – bitte kurz warten.", status: 429 };
   if (err instanceof Anthropic.APIConnectionError) return { message: "Keine Verbindung zur KI.", status: 502 };
-  if (err instanceof Anthropic.APIError) return { message: `KI-Fehler (${err.status ?? "?"}).`, status: 502 };
+  if (err instanceof Anthropic.APIError) {
+    // Grund von Anthropic mit anzeigen (z. B. „prompt is too long“), sonst ist ein 400 nicht zu deuten
+    const body = err.error as { error?: { message?: unknown } } | undefined;
+    const detail = typeof body?.error?.message === "string" ? body.error.message.slice(0, 200) : "";
+    return { message: `KI-Fehler (${err.status ?? "?"})${detail ? `: ${detail}` : "."}`, status: 502 };
+  }
   return { message: "Unerwarteter Fehler bei der KI-Anfrage.", status: 500 };
 }
 

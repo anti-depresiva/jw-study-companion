@@ -2,6 +2,7 @@
  * Alle Aktionen der App laufen direkt im Browser des Geräts.
  * Daten: IndexedDB (lokal). KI: direkte Anfrage an die Anthropic-API.
  */
+import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { generateAnswerSet, generateComments, generateFieldAnswers, type ReferenceText } from "@/lib/ai/answers";
 import { askAssistant, lookupReference as lookupReferenceAi, type ChatTurn } from "@/lib/ai/assistant";
@@ -783,13 +784,25 @@ export async function fillFields(t: Target, opts: { replaceAi?: boolean } = {}):
     .filter((i) => !keep(i));
   if (open.length === 0) return 0;
   const refs = await referenceTexts(target.item);
-  const { answers } = await generateFieldAnswers(target, settings, refs);
+  let answers: string[];
+  try {
+    ({ answers } = await generateFieldAnswers(target, settings, refs));
+  } catch (err) {
+    // Ungültige Anfrage (400, z. B. zu viel Text): einmal mit weniger Verweisen versuchen
+    if (!(err instanceof Anthropic.BadRequestError) || refs.length === 0) throw err;
+    ({ answers } = await generateFieldAnswers(target, settings, shrinkRefs(refs)));
+  }
   for (const i of open) {
     if (!answers[i]) continue;
     await store.saveField({ ...t, index: i, text: answers[i], origin: "ai" });
     filled++;
   }
   return filled;
+}
+
+/** Weniger und kürzere Verweise für einen zweiten Versuch */
+function shrinkRefs(refs: ReferenceText[]): ReferenceText[] {
+  return refs.slice(0, 4).map((r) => ({ ...r, text: r.text.slice(0, 3000) }));
 }
 
 /** Bereits abgerufene Verweise (für die Dauer der Sitzung, nur im Arbeitsspeicher) */
