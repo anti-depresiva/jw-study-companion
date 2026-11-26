@@ -3,6 +3,7 @@ import type { Store } from "@/lib/data/store";
 import { scriptureLabels } from "@/lib/scripture";
 import { assertSourceReady, buildSourceRef, NO_SOURCE_MESSAGE, type ResolvedTarget } from "@/lib/study/targets";
 import type { AnswerSet, CommentKind, ExtraComment, Settings } from "@/lib/types";
+import { itemQuestions } from "@/lib/types";
 import { model, structured } from "./client";
 import { allowedRefs, checkGrounding, filterScriptureList } from "./grounding";
 import { articleContext, commentsTask, paragraphTask, SYSTEM_PROMPT, translationNote, workbookContext, workbookTask } from "./prompts";
@@ -162,7 +163,10 @@ export async function generateFieldAnswers(
   refs: ReferenceText[] = [],
 ): Promise<{ answers: string[]; warnings: string[] }> {
   assertSourceReady(t);
-  if (t.type !== "workbook_item" || t.item.questions.length === 0) return { answers: [], warnings: [] };
+  if (t.type !== "workbook_item") return { answers: [], warnings: [] };
+  // Gleiche Reihenfolge wie die Antwortfelder: eigene Fragen, dann Fragen des Studienmaterials
+  const questions = itemQuestions(t.item);
+  if (questions.length === 0) return { answers: [], warnings: [] };
   const allowed = allowedRefs(t.item.originalText, t.item.title, t.workbook.bibleReading, ...refs.map((r) => r.text));
   const length = settings.commentLength === "kurz" ? "15–30" : settings.commentLength === "lang" ? "35–60" : "25–45";
   const refContext = refs.length
@@ -174,7 +178,7 @@ export async function generateFieldAnswers(
     system: SYSTEM_PROMPT,
     context: contextFor(t) + refContext,
     prompt: `Aufgabe: Beantworte für den Programmpunkt ${t.item.position} „${t.item.title}“ jede der folgenden Fragen einzeln – so, wie man sie bei der Zusammenkunft kurz kommentieren würde (${length} Wörter, natürlich formuliert).
-${t.item.questions.map((q, i) => `${i}: ${q}`).join("\n")}
+${questions.map((q, i) => `${i}: ${q}`).join("\n")}
 
 Regeln:
 - Grundlage sind das Studienmaterial (Programmpunkt und ggf. „Studienmaterial“ mit Kapiteltext) und die VERWEISE. Verweist eine Frage auf eine Stelle (z. B. „it ‚Jephtha‘ Abs. 6“, „th Lektion 2“), nutze vor allem den Text dieses Verweises.
@@ -186,7 +190,7 @@ Regeln:
     // Viele Fragen (z. B. Versammlungsbibelstudium mit 10+ Fragen) plus Nachdenken brauchen Platz
     maxTokens: 32000,
   });
-  const answers = t.item.questions.map((_, i) => {
+  const answers = questions.map((_, i) => {
     const a = out.answers.find((x) => x.index === i);
     return a && a.grounded ? a.answer.trim() : "";
   });

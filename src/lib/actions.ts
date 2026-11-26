@@ -777,7 +777,10 @@ export async function fillFields(t: Target, opts: { replaceAi?: boolean } = {}):
     return 1;
   }
 
-  const open = target.item.questions.map((_, i) => i).filter((i) => !keep(i));
+  // Eigene Fragen des Programmpunkts und Fragen des Studienmaterials – gleiche Zählung wie die Felder
+  const open = itemQuestions(target.item)
+    .map((_, i) => i)
+    .filter((i) => !keep(i));
   if (open.length === 0) return 0;
   const refs = await referenceTexts(target.item);
   const { answers } = await generateFieldAnswers(target, settings, refs);
